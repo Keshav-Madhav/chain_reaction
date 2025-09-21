@@ -81,11 +81,11 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
         onPeerLeft: (peerId: string) => {
           // Handle peer disconnection
           console.log("Peer left:", peerId);
-          removeParticipant(peerId);
-          // Add system message about user leaving
           const user = useUserStore.getState().participants.get(peerId);
+          removeParticipant(peerId);
+
           if (user) {
-            addSystemMessage(`${user.name} left the room`);
+            addSystemMessage(`${user.name} left the room `);
           }
         },
         onChatMessage: (message) => {

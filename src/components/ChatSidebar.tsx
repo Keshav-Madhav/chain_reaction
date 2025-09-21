@@ -132,44 +132,76 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           const isSystem = msg.type === "system" || msg.type === "game-event";
           const isLocalUser = msg.senderId === localUserId;
           
+          // Get appropriate icon for system messages
+          const getSystemIcon = () => {
+            const content = msg.content.toLowerCase();
+            if (content.includes("joined")) return "👋";
+            if (content.includes("left")) return "👋";
+            if (content.includes("wins") || content.includes("won")) return "🏆";
+            if (content.includes("game started")) return "🎮";
+            if (content.includes("new game")) return "🔄";
+            if (content.includes("welcome")) return "✨";
+            return "ℹ️";
+          };
+          
           return (
             <div 
               key={msg.id}
-              className={`flex ${isLocalUser ? "justify-end" : "justify-start"}`}
+              className={`flex ${isLocalUser && !isSystem ? "justify-end" : "justify-start"}`}
             >
               <div
                 className={`
                   max-w-[80%] rounded-lg p-3 
                   ${isSystem 
-                    ? "bg-gray-700/50 border border-gray-600/50" 
+                    ? msg.type === "game-event"
+                      ? "bg-blue-600/20 border border-blue-500/30" 
+                      : "bg-gray-700/50 border border-gray-600/50"
                     : isLocalUser 
                       ? "bg-blue-500/20 border border-blue-500/30"
                       : "bg-gray-700/30"
                   }
                 `}
               >
-                {!isSystem && (
-                  <div className="flex items-center gap-2 mb-1">
-                    <div 
-                      className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: msg.senderColor }}
-                    />
+                {isSystem ? (
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg leading-none">{getSystemIcon()}</span>
+                    <div className="flex-1">
+                      <p className={`text-sm ${
+                        msg.type === "game-event" 
+                          ? "text-blue-300 font-medium" 
+                          : "text-gray-400"
+                      }`}>
+                        {msg.content}
+                      </p>
+                      <p className="text-gray-500 text-xs mt-1">
+                        {formatTimestamp(msg.timestamp)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div 
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: msg.senderColor }}
+                      />
 
-                    <span 
-                      className="text-sm font-medium mr-4"
-                      style={{ color: msg.senderColor }}
-                    >
-                      {isLocalUser ? "You" : msg.senderName}
-                    </span>
-                    
-                    <p className="text-gray-500 text-xs ml-auto">
-                      {formatTimestamp(msg.timestamp)}
+                      <span 
+                        className="text-sm font-medium mr-4"
+                        style={{ color: msg.senderColor }}
+                      >
+                        {isLocalUser ? "You" : msg.senderName}
+                      </span>
+                      
+                      <p className="text-gray-500 text-xs ml-auto">
+                        {formatTimestamp(msg.timestamp)}
+                      </p>
+                    </div>
+                    <p className="text-sm text-white">
+                      {msg.content}
                     </p>
                   </div>
                 )}
-                <p className={`text-sm ${isSystem ? "text-gray-400" : "text-white"}`}>
-                  {msg.content}
-                </p>
               </div>
             </div>
           );

@@ -47,7 +47,7 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
       const participants = getParticipantsList();
       const firstPlayer = participants.find(p => p.id === firstPlayerId);
       if (firstPlayer) {
-        addGameEventMessage(`🎮 Game started! ${firstPlayer.name} goes first.`);
+        addGameEventMessage(`Game started! ${firstPlayer.name} goes first. Good luck everyone!`);
       }
     };
 
@@ -57,11 +57,18 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     };
 
     peerManager.onGameStateSync = (gameState) => {
+      const wasReset = gameState.status === "waiting" && gameState.moveHistory.length === 0;
       updateGameState(gameState);
+      
+      // Notify about game state sync if it's a reset
+      if (wasReset) {
+        addGameEventMessage("🔄 Game has been reset. Ready to start a new game!");
+      }
     };
 
     peerManager.onNextTurn = (playerId: string) => {
       setCurrentTurn(playerId);
+      // Turn notifications are handled by the move function to avoid duplicates
     };
 
   }, [peerManager, startGame, makeMove, updateGameState, setCurrentTurn, addGameEventMessage, getParticipantsList]);
@@ -127,10 +134,13 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     resetGame();
     initializeBoard(9, 6);
     
+    // Add reset notification
+    addGameEventMessage("🔄 Game has been reset. Ready to start a new game!");
+    
     // Sync state to peers
     const newGameState = getGameState();
     peerManager.broadcastGameStateSync(newGameState);
-  }, [peerManager, resetGame, initializeBoard, getGameState]);
+  }, [peerManager, resetGame, initializeBoard, getGameState, addGameEventMessage]);
 
   // Set first player (host only)
   const handleSetFirstPlayer = useCallback((playerId: string) => {
