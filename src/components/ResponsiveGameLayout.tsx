@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MobileHeader } from "./MobileHeader";
+import { FloatingActionButtons } from "./FloatingActionButtons";
 import { GameSidebar } from "./GameSidebar";
 import { ChatSidebar } from "./ChatSidebar";
 import { GameBoard } from "./GameBoard";
@@ -87,14 +88,7 @@ export const ResponsiveGameLayout: React.FC<ResponsiveGameLayoutProps> = ({
     <div className="h-dvh min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col overflow-hidden">
       {/* Mobile Header */}
       {isMobile && (
-        <MobileHeader
-          roomId={roomId}
-          onToggleLeftDrawer={() => setLeftDrawerOpen(!leftDrawerOpen)}
-          onToggleChatDrawer={() => setChatDrawerOpen(!chatDrawerOpen)}
-          leftDrawerOpen={leftDrawerOpen}
-          chatDrawerOpen={chatDrawerOpen}
-          unreadCount={unreadCount}
-        />
+        <MobileHeader roomId={roomId} />
       )}
 
       <div className="flex flex-1 relative overflow-hidden">
@@ -146,6 +140,15 @@ export const ResponsiveGameLayout: React.FC<ResponsiveGameLayoutProps> = ({
                 peerManager={peerManager}
               />
             </div>
+
+            {/* Floating Action Buttons */}
+            <FloatingActionButtons
+              onToggleLeftDrawer={() => setLeftDrawerOpen(!leftDrawerOpen)}
+              onToggleChatDrawer={() => setChatDrawerOpen(!chatDrawerOpen)}
+              leftDrawerOpen={leftDrawerOpen}
+              chatDrawerOpen={chatDrawerOpen}
+              unreadCount={unreadCount}
+            />
 
             {/* Left Drawer - Mobile */}
             <AnimatePresence>
