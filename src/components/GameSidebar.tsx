@@ -202,11 +202,11 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
                 <select
                   value={firstPlayer || ""}
                   onChange={(e) => handleSetFirstPlayer(e.target.value)}
-                  className="w-full bg-gray-600/50 text-white text-xs rounded px-2 py-1 border border-gray-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                  className="w-full h-10 bg-gray-800/70 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600/40 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 hover:bg-gray-800/90 transition-all duration-200"
                 >
-                  <option value="">Select first player...</option>
+                  <option value="" className="bg-gray-800 text-gray-400 !h-10">Select first player...</option>
                   {participants.map((p) => (
-                    <option key={p.id} value={p.id}>
+                    <option key={p.id} value={p.id} className="bg-gray-800 text-gray-200 h-10">
                       {p.name} {p.id === localUserId ? "(You)" : ""}
                     </option>
                   ))}

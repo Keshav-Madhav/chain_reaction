@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { Users, Plus, ArrowRight, Copy, Check } from "lucide-react";
+import { Plus, ArrowRight, Copy, Check } from "lucide-react";
 import { ChainReactionLogo } from "./ChainReactionLogo";
 
 interface JoinCreateRoomProps {
