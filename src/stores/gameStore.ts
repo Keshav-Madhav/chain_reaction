@@ -31,6 +31,13 @@ export interface GameState {
   
   // Game settings
   firstPlayer: string | null; // Player ID who goes first
+  
+  // Game statistics
+  gameStats: {
+    maxAtomsAchieved: Map<string, number>; // Track max atoms each player achieved
+    gameStartTime: number | null;
+    gameEndTime: number | null;
+  };
 }
 
 interface GameActions {
@@ -68,6 +75,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   winner: null,
   moveHistory: [],
   firstPlayer: null,
+  gameStats: {
+    maxAtomsAchieved: new Map(),
+    gameStartTime: null,
+    gameEndTime: null,
+  },
 
   // Initialize board with empty cells
   initializeBoard: (rows: number, cols: number) => {
@@ -92,6 +104,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       winner: null,
       moveHistory: [],
       firstPlayer: null,
+      gameStats: {
+        maxAtomsAchieved: new Map(),
+        gameStartTime: null,
+        gameEndTime: null,
+      },
     });
   },
 
@@ -102,6 +119,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       currentTurn: firstPlayerId,
       firstPlayer: firstPlayerId,
       winner: null,
+      gameStats: {
+        maxAtomsAchieved: new Map(),
+        gameStartTime: Date.now(),
+        gameEndTime: null,
+      },
     });
   },
 
@@ -146,7 +168,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // Make a move
   makeMove: (row: number, col: number, playerId: string, playerColor: UserColor) => {
-    const { board, isValidMove, getCellLimit, moveHistory } = get();
+    const { board, isValidMove, getCellLimit, moveHistory, gameStats } = get();
     
     if (!isValidMove(row, col, playerId)) {
       return false;
@@ -212,13 +234,54 @@ export const useGameStore = create<GameStore>((set, get) => ({
       col,
       timestamp: Date.now(),
     }];
+
+    // Update game stats - track max atoms achieved
+    const updatedGameStats = { ...gameStats };
     
-    // Check for winner
-    const winner = get().checkWinner();
+    // Calculate current atom counts
+    const atomCounts = new Map<string, number>();
+    newBoard.forEach(row => {
+      row.forEach(cell => {
+        if (cell.playerId && cell.dots > 0) {
+          const currentCount = atomCounts.get(cell.playerId) || 0;
+          atomCounts.set(cell.playerId, currentCount + cell.dots);
+        }
+      });
+    });
+    
+    // Update max atoms achieved for each player
+    atomCounts.forEach((count, playerId) => {
+      const currentMax = updatedGameStats.maxAtomsAchieved.get(playerId) || 0;
+      if (count > currentMax) {
+        updatedGameStats.maxAtomsAchieved.set(playerId, count);
+      }
+    });
+    
+    // Check for winner AFTER updating the board state
+    const playerIds = new Set<string>();
+    newBoard.forEach(row => {
+      row.forEach(cell => {
+        if (cell.playerId && cell.dots > 0) {
+          playerIds.add(cell.playerId);
+        }
+      });
+    });
+    
+    const playersWhoMoved = new Set(newMoveHistory.map(move => move.playerId));
+    let winner: string | null = null;
+    
+    // Winner conditions: only one player has dots remaining AND at least 2 players have made moves
+    if (playerIds.size === 1 && 
+        newMoveHistory.length > 0 && 
+        playersWhoMoved.size >= 2) {
+      winner = Array.from(playerIds)[0];
+      updatedGameStats.gameEndTime = Date.now();
+    }
     
     set({
       board: newBoard,
       moveHistory: newMoveHistory,
+      gameStats: updatedGameStats,
       winner,
       status: winner ? "finished" : "playing",
     });
@@ -300,6 +363,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       winner: state.winner,
       moveHistory: state.moveHistory,
       firstPlayer: state.firstPlayer,
+      gameStats: state.gameStats,
     };
   },
 }));

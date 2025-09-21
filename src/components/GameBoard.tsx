@@ -3,6 +3,8 @@
 import { Grid3X3, RotateCcw } from "lucide-react";
 import { useGameWithPeers } from "@/hooks/useGameWithPeers";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
+import { WinnerModal } from "@/components/WinnerModal";
+import { useUserStore } from "@/stores/userStore";
 
 interface GameBoardProps {
   roomId: string;
@@ -28,6 +30,18 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     isHost,
     getCurrentTurnPlayerName,
   } = useGameWithPeers(peerManager);
+  
+  const participants = useUserStore((state) => state.participants);
+
+  // Get winner information for modal
+  const getWinnerInfo = () => {
+    if (!winner) return null;
+    const winnerData = participants.get(winner);
+    return winnerData ? {
+      name: winnerData.name,
+      color: winnerData.color,
+    } : null;
+  };
 
   const handleCellClick = (row: number, col: number) => {
     if (status !== "playing" || !canMakeMove) {
@@ -181,6 +195,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           )}
         </div>
       </div>
+      
+      {/* Winner Modal */}
+      {status === "finished" && winner && (() => {
+        const winnerInfo = getWinnerInfo();
+        return winnerInfo ? (
+          <WinnerModal
+            winnerName={winnerInfo.name}
+            winnerColor={winnerInfo.color}
+            onNewGame={handleNewGame}
+            isHost={isHost}
+          />
+        ) : null;
+      })()}
     </div>
   );
 };

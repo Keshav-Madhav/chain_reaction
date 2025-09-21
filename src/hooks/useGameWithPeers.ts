@@ -22,7 +22,6 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     updateGameState,
     getGameState,
     isValidMove,
-    getPlayerAtomCounts,
   } = useGameStore();
 
   const { localUser, getParticipantsList } = useUserStore();
@@ -173,7 +172,6 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     canStartGame: canStartGame(),
     isHost,
     getGameState,
-    getPlayerAtomCounts,
     getCurrentTurnPlayerName,
   };
 };

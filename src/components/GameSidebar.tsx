@@ -1,10 +1,11 @@
 "use client";
 
 import { Users, Crown, Copy, Check, LogOut, Play } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { UserData } from "@/stores/userStore";
 import { useGameWithPeers } from "@/hooks/useGameWithPeers";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
+import { useGameStore } from "@/stores/gameStore";
 
 interface GameSidebarProps {
   participants: UserData[];
@@ -31,8 +32,26 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
     handleSetFirstPlayer,
     canStartGame,
     isHost,
-    getPlayerAtomCounts,
   } = useGameWithPeers(peerManager);
+
+  // Get board state to calculate atom counts
+  const board = useGameStore((state) => state.board);
+
+  // Calculate player atom counts with useMemo to prevent infinite loops
+  const playerAtomCounts = useMemo(() => {
+    const atomCounts = new Map<string, number>();
+    
+    board.forEach(row => {
+      row.forEach(cell => {
+        if (cell.playerId && cell.dots > 0) {
+          const currentCount = atomCounts.get(cell.playerId) || 0;
+          atomCounts.set(cell.playerId, currentCount + cell.dots);
+        }
+      });
+    });
+    
+    return atomCounts;
+  }, [board]);
 
   const copyRoomId = async () => {
     try {
@@ -96,8 +115,7 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
           {participants.map((participant) => {
             const isYou = participant.id === localUserId;
             const isCurrentTurn = currentTurn === participant.id && status === "playing";
-            const atomCounts = getPlayerAtomCounts();
-            const atomCount = atomCounts.get(participant.id) || 0;
+            const atomCount = playerAtomCounts.get(participant.id) || 0;
             
             return (
               <div 
