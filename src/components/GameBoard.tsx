@@ -48,23 +48,90 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     handleMakeMove(row, col);
   };
 
-  const renderDots = (dots: number, color: string | null) => {
+  const renderAtoms = (dots: number, color: string | null) => {
     if (dots === 0) return null;
     
-    const dotElements = [];
-    for (let i = 0; i < dots; i++) {
-      dotElements.push(
-        <div
-          key={i}
-          className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full"
-          style={{ backgroundColor: color || "#6B7280" }}
+    // SVG Atom component
+    const AtomSVG = ({ atomColor }: { atomColor: string }) => (
+      <svg 
+        className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 rotate-45" 
+        viewBox="0 0 32 32" 
+        fill="none"
+      >
+        {/* Nucleus */}
+        <circle 
+          cx="16" 
+          cy="16" 
+          r="3" 
+          fill={atomColor}
+          opacity="0.9"
         />
+        {/* Electron orbits */}
+        <ellipse 
+          cx="16" 
+          cy="16" 
+          rx="12" 
+          ry="6" 
+          stroke={atomColor} 
+          strokeWidth="1.5" 
+          fill="none"
+          opacity="0.6"
+        />
+        <ellipse 
+          cx="16" 
+          cy="16" 
+          rx="6" 
+          ry="12" 
+          stroke={atomColor} 
+          strokeWidth="1.5" 
+          fill="none"
+          opacity="0.6"
+        />
+        {/* Electrons */}
+        <circle 
+          cx="4" 
+          cy="16" 
+          r="1.5" 
+          fill={atomColor}
+          opacity="0.8"
+        />
+        <circle 
+          cx="28" 
+          cy="16" 
+          r="1.5" 
+          fill={atomColor}
+          opacity="0.8"
+        />
+        <circle 
+          cx="16" 
+          cy="4" 
+          r="1.5" 
+          fill={atomColor}
+          opacity="0.8"
+        />
+        <circle 
+          cx="16" 
+          cy="28" 
+          r="1.5" 
+          fill={atomColor}
+          opacity="0.8"
+        />
+      </svg>
+    );
+    
+    const atomElements = [];
+    const atomColor = color || "#6B7280";
+    
+    for (let i = 0; i < dots; i++) {
+      atomElements.push(
+        <AtomSVG key={i} atomColor={atomColor} />
       );
     }
     
+    // Arrange atoms in a 2x2 grid
     return (
-      <div className="flex items-center justify-center gap-0.5 lg:gap-1 flex-wrap">
-        {dotElements}
+      <div className="flex flex-wrap w-fit h-fit max-w-full max-h-full items-center justify-center">
+        {atomElements}
       </div>
     );
   };
@@ -147,7 +214,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   key={`${rowIndex}-${colIndex}`}
                   onClick={() => handleCellClick(rowIndex, colIndex)}
                   className={`
-                    w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-md lg:rounded-lg border-2 transition-all duration-200
+                    w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-md lg:rounded-lg border-2 transition-all duration-200 flex items-center justify-center
                     ${getCellTypeColor(rowIndex, colIndex)}
                     ${status === "playing" && canMakeMove 
                       ? "cursor-pointer active:scale-95 hover:scale-105" 
@@ -161,9 +228,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     touchAction: 'manipulation'
                   }}
                 >
-                  <div className="w-full h-full flex items-center justify-center">
-                    {renderDots(cell.dots, cell.playerColor)}
-                  </div>
+                  {renderAtoms(cell.dots, cell.playerColor)}
                 </button>
               ))
             )}
