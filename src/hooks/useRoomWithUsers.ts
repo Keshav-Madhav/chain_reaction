@@ -12,11 +12,32 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const [localPeerId, setLocalPeerId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState<boolean>(false);
 
-  const { addParticipant, clearAllData } = useUserStore();
+  const { addParticipant, removeParticipant, clearAllData } = useUserStore();
 
   useEffect(() => {
+    // Handle browser close/refresh events
+    const handleBeforeUnload = () => {
+      const mgr = managerRef.current;
+      if (mgr) {
+        mgr.leaveRoom();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Page is being hidden (tab switch, minimize, etc.)
+        // We could implement a timeout here to leave after being hidden for too long
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
-      managerRef.current?.destroy();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      managerRef.current?.leaveRoom();
       managerRef.current = null;
     };
   }, []);
@@ -44,10 +65,15 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
           console.log("User list update received:", usersData);
           usersData.forEach(userData => addParticipant(userData));
         },
+        onPeerLeft: (peerId: string) => {
+          // Handle peer disconnection
+          console.log("Peer left:", peerId);
+          removeParticipant(peerId);
+        },
       });
     }
     return managerRef.current;
-  }, [opts?.maxParticipants, addParticipant]);
+  }, [opts?.maxParticipants, addParticipant, removeParticipant]);
 
   const createRoom = useCallback(async (customRoomId?: string): Promise<string> => {
     if (typeof window === "undefined") {
@@ -130,7 +156,8 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const leaveRoom = useCallback((): void => {
     const mgr = managerRef.current;
     if (mgr) {
-      mgr.destroy();
+      // Use graceful leave method that notifies others
+      mgr.leaveRoom();
       managerRef.current = null;
     }
     setRoomId(null);

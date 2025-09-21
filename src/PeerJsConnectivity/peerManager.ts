@@ -29,7 +29,8 @@ type ControlMessage =
   | { __control: "reject"; reason: string }
   | { __control: "peer-list"; peers: PeerId[]; usersData?: UserData[] }
   | { __control: "new-peer"; peerId: PeerId; userData?: UserData }
-  | { __control: "user-update"; userData: UserData };
+  | { __control: "user-update"; userData: UserData }
+  | { __control: "peer-left"; peerId: PeerId };
 
 /**
  * A message that can be sent or received over a PeerJS DataConnection.
@@ -88,6 +89,7 @@ export class PeerManager {
   onError: (err: unknown) => void;
   onUserDataUpdate?: (userData: UserData) => void;
   onUserListUpdate?: (usersData: UserData[]) => void;
+  onPeerLeft?: (peerId: PeerId) => void;
 
   constructor(options: {
     onPeerListUpdate: (peers: PeerId[]) => void;
@@ -96,6 +98,7 @@ export class PeerManager {
     maxParticipants?: number;
     onUserDataUpdate?: (userData: UserData) => void;
     onUserListUpdate?: (usersData: UserData[]) => void;
+    onPeerLeft?: (peerId: PeerId) => void;
   }) {
     this.onPeerListUpdate = options.onPeerListUpdate;
     this.onMessage = options.onMessage;
@@ -103,6 +106,7 @@ export class PeerManager {
     this.maxParticipants = options.maxParticipants ?? 4;
     this.onUserDataUpdate = options.onUserDataUpdate;
     this.onUserListUpdate = options.onUserListUpdate;
+    this.onPeerLeft = options.onPeerLeft;
   }
 
   private setupConnectionHandlers(conn: DataConnection): void {
@@ -210,6 +214,27 @@ export class PeerManager {
               }
               break;
             }
+            case "peer-left": {
+              const leftPeerId = parsed.peerId;
+              if (leftPeerId) {
+                // Remove from connections and user data
+                this.connections.delete(leftPeerId);
+                this.usersData.delete(leftPeerId);
+                
+                // Notify about peer leaving
+                if (this.onPeerLeft) {
+                  this.onPeerLeft(leftPeerId);
+                }
+                
+                // Update peer list
+                const remainingPeers = Array.from(this.connections.keys());
+                if (this.isHost && this.peer) {
+                  remainingPeers.push(this.peer.id);
+                }
+                this.onPeerListUpdate(remainingPeers);
+              }
+              break;
+            }
             case "reject": {
               this.onError({ type: "reject", reason: parsed.reason });
               break;
@@ -237,11 +262,53 @@ export class PeerManager {
     });
 
     conn.on("close", () => {
+      // Clean up connection and user data
       this.connections.delete(remote);
-      this.onPeerListUpdate(Array.from(this.connections.keys()).concat(this.isHost && this.roomId ? [this.roomId] : []));
+      this.usersData.delete(remote);
+      
+      // Notify other peers if this is the host
+      if (this.isHost) {
+        this.notifyPeerLeft(remote);
+      }
+      
+      // Update peer list
+      const remainingPeers = Array.from(this.connections.keys());
+      if (this.isHost && this.peer) {
+        remainingPeers.push(this.peer.id);
+      }
+      this.onPeerListUpdate(remainingPeers);
+      
+      // Notify about peer leaving
+      if (this.onPeerLeft) {
+        this.onPeerLeft(remote);
+      }
     });
 
-    conn.on("error", (e) => this.onError(e));
+    conn.on("error", (e) => {
+      console.warn("Connection error with peer", remote, e);
+      // Clean up on error
+      this.connections.delete(remote);
+      this.usersData.delete(remote);
+      
+      // Notify other peers if this is the host
+      if (this.isHost) {
+        this.notifyPeerLeft(remote);
+      }
+      
+      // Update peer list
+      const remainingPeers = Array.from(this.connections.keys());
+      if (this.isHost && this.peer) {
+        remainingPeers.push(this.peer.id);
+      }
+      this.onPeerListUpdate(remainingPeers);
+      
+      // Notify about peer leaving
+      if (this.onPeerLeft) {
+        this.onPeerLeft(remote);
+      }
+      
+      this.onError(e);
+    });
   }
 
   async createHost(roomId: string, peerOptions?: PeerJSOption): Promise<void> {
@@ -347,6 +414,20 @@ export class PeerManager {
     }
   }
 
+  // Notify all peers that someone left
+  private notifyPeerLeft(leftPeerId: PeerId): void {
+    const packet = JSON.stringify({ __control: "peer-left", peerId: leftPeerId });
+    for (const [, conn] of this.connections.entries()) {
+      if (conn.open) {
+        try {
+          conn.send(packet);
+        } catch (e) {
+          console.warn("failed to notify peer about left peer", conn.peer, e);
+        }
+      }
+    }
+  }
+
   // Send user data update to all connected peers
   broadcastUserData(userData: UserData): void {
     // Store locally first
@@ -403,6 +484,43 @@ export class PeerManager {
         reject(e);
       });
     });
+  }
+
+  // Gracefully leave the room and notify others
+  leaveRoom(): void {
+    if (this.peer) {
+      // Notify others that we're leaving
+      if (this.isHost) {
+        // Host leaving - notify all peers
+        const packet = JSON.stringify({ __control: "peer-left", peerId: this.peer.id });
+        for (const [, conn] of this.connections.entries()) {
+          if (conn.open) {
+            try {
+              conn.send(packet);
+            } catch (e) {
+              console.warn("failed to notify peer about host leaving", conn.peer, e);
+            }
+          }
+        }
+      } else {
+        // Regular peer leaving - notify host
+        for (const [, conn] of this.connections.entries()) {
+          if (conn.open) {
+            try {
+              const packet = JSON.stringify({ __control: "peer-left", peerId: this.peer.id });
+              conn.send(packet);
+            } catch (e) {
+              console.warn("failed to notify about leaving", e);
+            }
+          }
+        }
+      }
+    }
+    
+    // Clean up after a short delay to ensure messages are sent
+    setTimeout(() => {
+      this.destroy();
+    }, 100);
   }
 
   destroy(): void {
@@ -469,6 +587,10 @@ export const useRoom = (opts?: { maxParticipants?: number }) => {
           store.addMessage(m);
         },
         onError: (e) => setError(e),
+        onPeerLeft: (peerId) => {
+          // Remove peer from the old store as well
+          store.removeParticipant(peerId);
+        },
       });
     }
     return managerRef.current;
@@ -534,7 +656,7 @@ export const useRoom = (opts?: { maxParticipants?: number }) => {
   const leaveRoom = useCallback((): void => {
     const mgr = managerRef.current;
     if (mgr) {
-      mgr.destroy();
+      mgr.leaveRoom();
       managerRef.current = null;
     }
     useRoomStore.setState({ localPeerId: null, isHost: false, roomId: null, participants: [], messages: [] });
