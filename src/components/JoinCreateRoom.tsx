@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { Users, Plus, ArrowRight, Copy, Check } from "lucide-react";
+import { ChainReactionLogo } from "./ChainReactionLogo";
 
 interface JoinCreateRoomProps {
   onCreateRoom: () => Promise<string>;
@@ -63,12 +64,7 @@ export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-2xl">
-            <Users className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-            Chain Reaction
-          </h1>
+          <ChainReactionLogo size="2xl" flexcol/>
           <p className="text-gray-300 text-lg">Connect and play with friends</p>
         </div>
 

@@ -5,9 +5,7 @@ import { useRoomWithUsers } from "@/hooks/useRoomWithUsers";
 import { useUserStore, UserColor } from "@/stores/userStore";
 import { JoinCreateRoom } from "@/components/JoinCreateRoom";
 import { UserSetup } from "@/components/UserSetup";
-import { GameSidebar } from "@/components/GameSidebar";
-import { GameBoard } from "@/components/GameBoard";
-import { ChatSidebar } from "@/components/ChatSidebar";
+import { ResponsiveGameLayout } from "@/components/ResponsiveGameLayout";
 
 type AppPhase = "join-create" | "user-setup" | "in-game";
 
@@ -173,32 +171,14 @@ const ChatPage = () => {
       const participantsList = getParticipantsList();
       
       return (
-        <div className="h-dvh min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex">
-          {/* Left Sidebar - Participants & Game Info */}
-          <GameSidebar
-            participants={participantsList}
-            roomId={roomId}
-            localUserId={localPeerId}
-            onLeaveRoom={handleLeaveRoom}
-            peerManager={peerManager}
-          />
-          
-          {/* Center - Game Board */}
-          <GameBoard
-            roomId={roomId}
-            localUserName={localUser?.name}
-            localUserColor={localUser?.color}
-            peerManager={peerManager}
-          />
-          
-          {/* Right Sidebar - Chat */}
-          <ChatSidebar
-            localUserId={localPeerId}
-            localUserName={localUser?.name}
-            localUserColor={localUser?.color}
-            peerManager={peerManager}
-          />
-        </div>
+        <ResponsiveGameLayout
+          participants={participantsList}
+          roomId={roomId}
+          localUserId={localPeerId}
+          localUser={localUser}
+          onLeaveRoom={handleLeaveRoom}
+          peerManager={peerManager}
+        />
       );
 
     default:

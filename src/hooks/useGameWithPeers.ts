@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { useGameStore } from "@/stores/gameStore";
 import { useUserStore, UserColor } from "@/stores/userStore";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
@@ -27,15 +27,6 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
 
   const { localUser, getParticipantsList } = useUserStore();
   const { addGameEventMessage } = useChatStore();
-  const isInitialized = useRef(false);
-
-  // Initialize board when component mounts
-  useEffect(() => {
-    if (!isInitialized.current) {
-      initializeBoard(9, 6); // Standard Chain Reaction board
-      isInitialized.current = true;
-    }
-  }, [initializeBoard]);
 
   // Set up peer manager callbacks for game events
   useEffect(() => {
@@ -140,7 +131,8 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     // Sync state to peers
     const newGameState = getGameState();
     peerManager.broadcastGameStateSync(newGameState);
-  }, [peerManager, resetGame, initializeBoard, getGameState, addGameEventMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerManager, resetGame, getGameState, addGameEventMessage]); // initializeBoard omitted as it's stable
 
   // Set first player (host only)
   const handleSetFirstPlayer = useCallback((playerId: string) => {

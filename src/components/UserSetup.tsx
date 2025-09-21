@@ -3,6 +3,7 @@
 import { useState, FormEvent } from "react";
 import { User, Palette, ArrowRight, Check } from "lucide-react";
 import { AVAILABLE_COLORS, UserColor } from "@/stores/userStore";
+import { ChainReactionLogo } from "./ChainReactionLogo";
 
 interface UserSetupProps {
   roomId: string;
@@ -34,10 +35,8 @@ export const UserSetup: React.FC<UserSetupProps> = ({
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-2xl">
-            <User className="w-10 h-10 text-white" />
-          </div>
+        <div className="text-center mb-8 flex flex-col items-center justify-center">
+          <ChainReactionLogo size="xl" showname={false}/>
           <h1 className="text-3xl font-bold text-white mb-2">
             Welcome to the Game!
           </h1>

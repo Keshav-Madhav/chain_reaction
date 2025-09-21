@@ -1,6 +1,6 @@
 "use client";
 
-import { Grid3X3, RotateCcw } from "lucide-react";
+import { Grid3X3 } from "lucide-react";
 import { useGameWithPeers } from "@/hooks/useGameWithPeers";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 import { WinnerModal } from "@/components/WinnerModal";
@@ -15,14 +15,11 @@ interface GameBoardProps {
 
 export const GameBoard: React.FC<GameBoardProps> = ({
   roomId,
-  localUserName = "Player",
-  localUserColor = "#4ECDC4",
   peerManager,
 }) => {
   const {
     board,
     status,
-    currentTurn,
     winner,
     handleMakeMove,
     handleNewGame,
@@ -59,14 +56,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       dotElements.push(
         <div
           key={i}
-          className="w-2 h-2 rounded-full"
+          className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full"
           style={{ backgroundColor: color || "#6B7280" }}
         />
       );
     }
     
     return (
-      <div className="flex items-center justify-center gap-1 flex-wrap">
+      <div className="flex items-center justify-center gap-0.5 lg:gap-1 flex-wrap">
         {dotElements}
       </div>
     );
@@ -93,8 +90,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   return (
     <div className="flex-1 bg-gray-900/50 backdrop-blur-xl flex flex-col h-full">
-      {/* Game Header */}
-      <div className="p-6 border-b border-gray-700/50">
+      {/* Game Header - Hidden on mobile, shown on desktop */}
+      <div className="hidden lg:block p-6 border-b border-gray-700/50">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">Chain Reaction</h1>
@@ -117,7 +114,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 onClick={handleNewGame}
                 className="flex items-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 hover:border-blue-500/50 rounded-lg px-4 py-2 text-blue-400 hover:text-blue-300 transition-all duration-200"
               >
-                <RotateCcw className="w-4 h-4" />
+                {/* Replace RotateCcw with custom icon for consistency */}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
                 New Game
               </button>
             )}
@@ -126,11 +126,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
 
       {/* Game Board */}
-      <div className="flex-1 p-6 flex items-center justify-center">
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 backdrop-blur-sm">
-          <div className="flex items-center justify-center gap-2 text-gray-400 mb-4">
-            <Grid3X3 className="w-6 h-6" />
-            <span className="text-lg">
+      <div className="flex-1 p-2 sm:p-4 lg:p-6 flex items-center justify-center overflow-auto">
+        <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-3 sm:p-4 lg:p-6 backdrop-blur-sm w-full max-w-4xl mx-auto">
+          <div className="flex items-center justify-center gap-2 text-gray-400 mb-3 lg:mb-4">
+            <Grid3X3 className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6" />
+            <span className="text-xs sm:text-sm lg:text-lg text-center">
               {status === "waiting" && "Waiting for game to start"}
               {status === "playing" && `Game in progress - ${canMakeMove ? "Your turn" : "Waiting for turn"}`}
               {status === "finished" && winner && "Game finished"}
@@ -138,7 +138,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           </div>
 
           <div 
-            className="grid gap-2 w-fit mx-auto"
+            className="grid gap-1 sm:gap-2 w-fit mx-auto touch-manipulation"
             style={{ gridTemplateColumns: `repeat(${board[0]?.length || 8}, 1fr)` }}
           >
             {board.map((row, rowIndex) =>
@@ -147,14 +147,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   key={`${rowIndex}-${colIndex}`}
                   onClick={() => handleCellClick(rowIndex, colIndex)}
                   className={`
-                    w-12 h-12 rounded-lg border-2 transition-all duration-200
+                    w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-md lg:rounded-lg border-2 transition-all duration-200
                     ${getCellTypeColor(rowIndex, colIndex)}
                     ${status === "playing" && canMakeMove 
-                      ? "cursor-pointer" 
+                      ? "cursor-pointer active:scale-95 hover:scale-105" 
                       : "cursor-not-allowed opacity-60"
                     }
+                    touch-manipulation select-none
                   `}
                   disabled={status !== "playing" || !canMakeMove}
+                  style={{ 
+                    WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation'
+                  }}
                 >
                   <div className="w-full h-full flex items-center justify-center">
                     {renderDots(cell.dots, cell.playerColor)}
@@ -165,14 +170,44 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           </div>
           
           {/* Game Info */}
-          <div className="mt-6 text-center">
+          <div className="mt-4 lg:mt-6 text-center">
             {status === "playing" && getCurrentTurnPlayerName && (
               <div className="text-center">
-                <span className="text-blue-400 text-sm font-medium">
+                <span className="text-blue-400 text-xs lg:text-sm font-medium">
                   {getCurrentTurnPlayerName()} is making a move
                 </span>
               </div>
             )}
+            
+            {/* Mobile New Game Button */}
+            {isHost && (
+              <div className="lg:hidden mt-4">
+                <button
+                  onClick={handleNewGame}
+                  className="flex items-center gap-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 hover:border-blue-500/50 rounded-lg px-4 py-2 text-blue-400 hover:text-blue-300 transition-all duration-200 mx-auto"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  New Game
+                </button>
+              </div>
+            )}
+            
+            {/* Mobile Turn Indicator */}
+            <div className="lg:hidden mt-4">
+              {status === "playing" && canMakeMove && (
+                <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 rounded-lg px-3 py-2 justify-center">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-green-400 text-sm font-medium">Your Turn</span>
+                </div>
+              )}
+              {status === "finished" && winner && (
+                <div className="flex items-center gap-2 bg-blue-500/20 border border-blue-500/30 rounded-lg px-3 py-2 justify-center">
+                  <span className="text-blue-400 text-sm font-medium">Game Finished!</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

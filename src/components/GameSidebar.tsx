@@ -6,6 +6,7 @@ import { UserData } from "@/stores/userStore";
 import { useGameWithPeers } from "@/hooks/useGameWithPeers";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 import { useGameStore } from "@/stores/gameStore";
+import { ChainReactionLogo } from "./ChainReactionLogo";
 
 interface GameSidebarProps {
   participants: UserData[];
@@ -64,17 +65,11 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
   };
 
   return (
-    <div className="w-80 bg-gray-800/50 backdrop-blur-xl border-r border-gray-700/50 flex flex-col h-full">
+    <div className="w-full lg:w-80 bg-gray-800/50 backdrop-blur-xl lg:border-r border-gray-700/50 flex flex-col h-full">
       {/* Header */}
-      <div className="p-6 border-b border-gray-700/50">
+      <div className="p-4 lg:p-6 border-b border-gray-700/50">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-cyan-400 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
-            <Users className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">Chain Reaction</h1>
-            <p className="text-gray-400 text-sm">Multiplayer Game</p>
-          </div>
+          <ChainReactionLogo size="lg" />
         </div>
 
         {/* Room Info */}
