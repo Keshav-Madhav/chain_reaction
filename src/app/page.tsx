@@ -5,7 +5,9 @@ import { useRoomWithUsers } from "@/hooks/useRoomWithUsers";
 import { useUserStore, UserColor } from "@/stores/userStore";
 import { JoinCreateRoom } from "@/components/JoinCreateRoom";
 import { UserSetup } from "@/components/UserSetup";
-import { ParticipantsList } from "@/components/ParticipantsList";
+import { GameSidebar } from "@/components/GameSidebar";
+import { GameBoard } from "@/components/GameBoard";
+import { ChatSidebar } from "@/components/ChatSidebar";
 
 type AppPhase = "join-create" | "user-setup" | "in-game";
 
@@ -170,12 +172,30 @@ const ChatPage = () => {
       const participantsList = getParticipantsList();
       
       return (
-        <ParticipantsList
-          participants={participantsList}
-          roomId={roomId}
-          localUserId={localPeerId}
-          onLeaveRoom={handleLeaveRoom}
-        />
+        <div className="h-dvh min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex">
+          {/* Left Sidebar - Participants & Game Info */}
+          <GameSidebar
+            participants={participantsList}
+            roomId={roomId}
+            localUserId={localPeerId}
+            onLeaveRoom={handleLeaveRoom}
+          />
+          
+          {/* Center - Game Board */}
+          <GameBoard
+            roomId={roomId}
+            localUserName={localUser?.name}
+            localUserColor={localUser?.color}
+            isMyTurn={false} // TODO: Implement turn logic
+          />
+          
+          {/* Right Sidebar - Chat */}
+          <ChatSidebar
+            localUserId={localPeerId}
+            localUserName={localUser?.name}
+            localUserColor={localUser?.color}
+          />
+        </div>
       );
 
     default:
