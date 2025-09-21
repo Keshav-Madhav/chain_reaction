@@ -1,189 +1,186 @@
 "use client";
 
-import { useState, useRef, useEffect, FormEvent, useMemo } from "react";
-import { useRoom, RoomMessage } from "@/PeerJsConnectivity/peerManager";
+import { useState, useEffect } from "react";
+import { useRoomWithUsers } from "@/hooks/useRoomWithUsers";
+import { useUserStore, UserColor } from "@/stores/userStore";
+import { JoinCreateRoom } from "@/components/JoinCreateRoom";
+import { UserSetup } from "@/components/UserSetup";
+import { ParticipantsList } from "@/components/ParticipantsList";
+
+type AppPhase = "join-create" | "user-setup" | "in-game";
 
 const ChatPage = () => {
   const {
     createRoom,
     joinRoom,
-    sendObject,
     leaveRoom,
-    participants,
-    messages,
+    broadcastUserData,
+    setUserData,
     localPeerId,
     isHost,
     roomId,
     loading,
     error,
-  } = useRoom();
+  } = useRoomWithUsers();
 
-  const [inputRoomId, setInputRoomId] = useState("");
-  const [message, setMessage] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const {
+    localUser,
+    availableColors,
+    setLocalUser,
+    clearAllData,
+    getParticipantsList,
+  } = useUserStore();
+
+  const [phase, setPhase] = useState<AppPhase>("join-create");
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Helper function to safely convert error to string
   const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    if (error && typeof error === 'object') {
+    if (typeof error === "string") return error;
+    if (error && typeof error === "object") {
       try {
         return JSON.stringify(error);
       } catch {
-        return 'An unknown error occurred';
+        return "An unknown error occurred";
       }
     }
     return String(error);
   };
 
-  // Auto-scroll to the bottom of the messages list
+  // Handle connection errors
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Memoize error message to avoid TypeScript issues
-  const errorMessage = useMemo(() => {
-    if (!error) return null;
-    return getErrorMessage(error);
+    if (error) {
+      setConnectionError(getErrorMessage(error));
+    } else {
+      setConnectionError(null);
+    }
   }, [error]);
 
-  const handleCreateRoom = async () => {
-    if (loading) return;
+  // Move to user setup phase after successful room connection
+  useEffect(() => {
+    if (roomId && localPeerId && phase === "join-create") {
+      setPhase("user-setup");
+    }
+  }, [roomId, localPeerId, phase]);
+
+  // Move to in-game phase after user setup is complete
+  useEffect(() => {
+    if (localUser && localUser.name && localUser.color && phase === "user-setup") {
+      setPhase("in-game");
+    }
+  }, [localUser, phase]);
+
+  const handleCreateRoom = async (): Promise<string> => {
     try {
-      await createRoom();
+      setConnectionError(null);
+      const newRoomId = await createRoom();
+      return newRoomId;
     } catch (e) {
-      console.error("Failed to create room:", e);
+      const errorMsg = getErrorMessage(e);
+      setConnectionError(errorMsg);
+      throw new Error(errorMsg);
     }
   };
 
-  const handleJoinRoom = async (e: FormEvent) => {
-    e.preventDefault();
-    if (loading || !inputRoomId) return;
+  const handleJoinRoom = async (roomIdToJoin: string): Promise<void> => {
     try {
-      await joinRoom(inputRoomId);
+      setConnectionError(null);
+      await joinRoom(roomIdToJoin);
     } catch (e) {
-      console.error("Failed to join room:", e);
+      const errorMsg = getErrorMessage(e);
+      setConnectionError(errorMsg);
+      throw new Error(errorMsg);
     }
   };
 
-  const handleSendMessage = (e: FormEvent) => {
-    e.preventDefault();
-    if (!message.trim() || !roomId) return;
-    sendObject({ text: message });
-    setMessage("");
+  const handleUserSetupComplete = (name: string, color: UserColor) => {
+    if (!localPeerId || !roomId) return;
+
+    // Create local user data
+    const userData = {
+      id: localPeerId,
+      name,
+      color,
+      isHost,
+    };
+
+    // Update local user in store
+    setLocalUser(userData);
+
+    // If host, store locally in PeerManager first
+    if (isHost) {
+      try {
+        setUserData(userData);
+      } catch (e) {
+        console.warn("Failed to set host user data:", e);
+      }
+    }
+
+    // Broadcast user data to other peers
+    try {
+      broadcastUserData(userData);
+    } catch (e) {
+      console.warn("Failed to broadcast user data:", e);
+    }
   };
 
-  const renderMessage = (msg: RoomMessage) => {
-    const isLocal = msg.from === localPeerId;
-    return (
-      <div
-        key={msg.timestamp}
-        className={`flex ${isLocal ? "justify-end" : "justify-start"} mb-2`}
-      >
-        <div
-          className={`p-2 rounded-lg max-w-[70%] ${
-            isLocal ? "bg-blue-500 text-white" : "bg-gray-200 text-black"
-          }`}
-        >
-          <span className="text-xs text-gray-400">
-            {isLocal ? "You" : `Peer: ${msg.from.substring(0, 5)}...`}
-          </span>
-          <p>{(msg.payload as { text: string })?.text}</p>
-        </div>
-      </div>
-    );
+  const handleLeaveRoom = () => {
+    leaveRoom();
+    clearAllData();
+    setPhase("join-create");
+    setConnectionError(null);
   };
 
-  return (
-    <div className="flex flex-col h-screen bg-gray-900 p-4">
-      {/* Connection UI */}
-      {!roomId && (
-        <div className="flex flex-col items-center justify-center h-full">
-          <h1 className="text-3xl font-bold mb-4">Chat Room</h1>
-          <button
-            onClick={handleCreateRoom}
-            disabled={loading}
-            className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg mb-4 disabled:opacity-50"
-          >
-            {loading ? "Creating..." : "Create Room"}
-          </button>
-          <form onSubmit={handleJoinRoom} className="flex gap-2">
-            <input
-              type="text"
-              value={inputRoomId}
-              onChange={(e) => setInputRoomId(e.target.value)}
-              placeholder="Enter Room ID to Join"
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              disabled={loading || !inputRoomId}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg disabled:opacity-50"
-            >
-              Join Room
-            </button>
-          </form>
-          {errorMessage && (
-            <p className="text-red-500 mt-2">
-              Error: {errorMessage}
-            </p>
-          )}
-        </div>
-      )}
+  // Render based on current phase
+  switch (phase) {
+    case "join-create":
+      return (
+        <JoinCreateRoom
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+          loading={loading}
+          error={connectionError}
+        />
+      );
 
-      {/* Chat UI */}
-      {roomId && (
-        <div className="flex flex-col h-full w-full max-w-2xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
-          {/* Header */}
-          <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-semibold">Room: {roomId}</h2>
-              <p className="text-sm">
-                Status: {isHost ? "Host" : "Participant"} (ID:{" "}
-                {localPeerId?.substring(0, 5)}...)
-              </p>
-              <p className="text-xs">
-                Participants: {participants.length}
-                {participants.map((p) => ` ${p.substring(0, 5)}...`)}
-              </p>
-            </div>
-            <button
-              onClick={leaveRoom}
-              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg"
-            >
-              Leave
-            </button>
-          </div>
+    case "user-setup":
+      if (!roomId) {
+        // Fallback to join-create if no room
+        setPhase("join-create");
+        return null;
+      }
+      return (
+        <UserSetup
+          roomId={roomId}
+          isHost={isHost}
+          availableColors={availableColors}
+          onComplete={handleUserSetupComplete}
+          loading={loading}
+        />
+      );
 
-          {/* Messages display */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {messages.map((msg) => renderMessage(msg))}
-            <div ref={messagesEndRef} />
-          </div>
-          [Image of a chat interface with a message list and an input field]
+    case "in-game":
+      if (!roomId || !localPeerId) {
+        // Fallback to join-create if no room or peer
+        setPhase("join-create");
+        return null;
+      }
+      
+      const participantsList = getParticipantsList();
+      
+      return (
+        <ParticipantsList
+          participants={participantsList}
+          roomId={roomId}
+          localUserId={localPeerId}
+          onLeaveRoom={handleLeaveRoom}
+        />
+      );
 
-          {/* Message input */}
-          <form onSubmit={handleSendMessage} className="p-4 bg-gray-200">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="submit"
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg"
-              >
-                Send
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-    </div>
-  );
+    default:
+      return null;
+  }
 };
 
 export default ChatPage;

@@ -1,0 +1,155 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { PeerManager, createRoomId } from "@/PeerJsConnectivity/peerManager";
+import { useUserStore, UserData } from "@/stores/userStore";
+
+export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
+  const managerRef = useRef<PeerManager | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<unknown>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [localPeerId, setLocalPeerId] = useState<string | null>(null);
+  const [isHost, setIsHost] = useState<boolean>(false);
+
+  const { addParticipant, clearAllData } = useUserStore();
+
+  useEffect(() => {
+    return () => {
+      managerRef.current?.destroy();
+      managerRef.current = null;
+    };
+  }, []);
+
+  const ensureManager = useCallback((): PeerManager => {
+    if (!managerRef.current) {
+      managerRef.current = new PeerManager({
+        maxParticipants: opts?.maxParticipants ?? 4,
+        onPeerListUpdate: (peers) => {
+          // Update basic peer tracking
+          console.log("Peer list updated:", peers);
+        },
+        onMessage: (msg) => {
+          // Handle game messages
+          console.log("Message received:", msg);
+        },
+        onError: (e) => setError(e),
+        onUserDataUpdate: (userData: UserData) => {
+          // Handle user data updates from other peers
+          console.log("User data update received:", userData);
+          addParticipant(userData);
+        },
+        onUserListUpdate: (usersData: UserData[]) => {
+          // Handle bulk user data updates (e.g., when joining)
+          console.log("User list update received:", usersData);
+          usersData.forEach(userData => addParticipant(userData));
+        },
+      });
+    }
+    return managerRef.current;
+  }, [opts?.maxParticipants, addParticipant]);
+
+  const createRoom = useCallback(async (customRoomId?: string): Promise<string> => {
+    if (typeof window === "undefined") {
+      throw new Error("createRoom must be called client-side");
+    }
+    setLoading(true);
+    setError(null);
+    const id = customRoomId ?? createRoomId();
+    const mgr = ensureManager();
+    try {
+      await mgr.createHost(id);
+      setRoomId(id);
+      setIsHost(true);
+      setLocalPeerId(mgr.peer?.id ?? null);
+      setLoading(false);
+      return id;
+    } catch (e) {
+      setError(e);
+      setLoading(false);
+      throw e;
+    }
+  }, [ensureManager]);
+
+  const joinRoom = useCallback(async (roomIdToJoin: string, preferredId?: string): Promise<void> => {
+    if (typeof window === "undefined") {
+      throw new Error("joinRoom must be called client-side");
+    }
+    setLoading(true);
+    setError(null);
+    const mgr = ensureManager();
+    try {
+      await mgr.joinRoom(roomIdToJoin, preferredId);
+      setRoomId(roomIdToJoin);
+      setIsHost(false);
+      setLocalPeerId(mgr.peer?.id ?? null);
+      setLoading(false);
+    } catch (e) {
+      setError(e);
+      setLoading(false);
+      throw e;
+    }
+  }, [ensureManager]);
+
+  const joinRoomWithUserData = useCallback(async (roomIdToJoin: string, userData: UserData, preferredId?: string): Promise<void> => {
+    if (typeof window === "undefined") {
+      throw new Error("joinRoomWithUserData must be called client-side");
+    }
+    setLoading(true);
+    setError(null);
+    const mgr = ensureManager();
+    try {
+      await mgr.joinRoomWithUserData(roomIdToJoin, userData, preferredId);
+      setRoomId(roomIdToJoin);
+      setIsHost(false);
+      setLocalPeerId(mgr.peer?.id ?? null);
+      setLoading(false);
+    } catch (e) {
+      setError(e);
+      setLoading(false);
+      throw e;
+    }
+  }, [ensureManager]);
+
+  const broadcastUserData = useCallback((userData: UserData): void => {
+    const mgr = managerRef.current;
+    if (!mgr) {
+      throw new Error("Not connected to a room");
+    }
+    mgr.broadcastUserData(userData);
+  }, []);
+
+  const setUserData = useCallback((userData: UserData): void => {
+    const mgr = managerRef.current;
+    if (!mgr) {
+      throw new Error("Not connected to a room");
+    }
+    mgr.setUserData(userData);
+  }, []);
+
+  const leaveRoom = useCallback((): void => {
+    const mgr = managerRef.current;
+    if (mgr) {
+      mgr.destroy();
+      managerRef.current = null;
+    }
+    setRoomId(null);
+    setLocalPeerId(null);
+    setIsHost(false);
+    clearAllData();
+  }, [clearAllData]);
+
+  return {
+    createRoom,
+    joinRoom,
+    joinRoomWithUserData,
+    leaveRoom,
+    broadcastUserData,
+    setUserData,
+    roomId,
+    localPeerId,
+    isHost,
+    loading,
+    error,
+  };
+};

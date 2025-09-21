@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Peer, { DataConnection, PeerJSOption } from "peerjs";
 import { v4 as uuidv4 } from "uuid";
 import { create } from "zustand";
+import { UserData } from "@/stores/userStore";
 
 /*********************** Types **************************/
 
@@ -24,10 +25,11 @@ export type RoomMessage = {
  * Control messages used for internal communication between peers.
  */
 type ControlMessage =
-  | { __control: "join"; peerId: PeerId }
+  | { __control: "join"; peerId: PeerId; userData?: UserData }
   | { __control: "reject"; reason: string }
-  | { __control: "peer-list"; peers: PeerId[] }
-  | { __control: "new-peer"; peerId: PeerId };
+  | { __control: "peer-list"; peers: PeerId[]; usersData?: UserData[] }
+  | { __control: "new-peer"; peerId: PeerId; userData?: UserData }
+  | { __control: "user-update"; userData: UserData };
 
 /**
  * A message that can be sent or received over a PeerJS DataConnection.
@@ -77,23 +79,30 @@ export const createRoomId = (): string => {
 export class PeerManager {
   peer: Peer | null = null;
   connections: Map<PeerId, DataConnection> = new Map();
+  usersData: Map<PeerId, UserData> = new Map(); // Store user data for all peers
   isHost = false;
   roomId: string | null = null;
   maxParticipants: number;
   onPeerListUpdate: (peers: PeerId[]) => void;
   onMessage: (msg: RoomMessage) => void;
   onError: (err: unknown) => void;
+  onUserDataUpdate?: (userData: UserData) => void;
+  onUserListUpdate?: (usersData: UserData[]) => void;
 
   constructor(options: {
     onPeerListUpdate: (peers: PeerId[]) => void;
     onMessage: (msg: RoomMessage) => void;
     onError?: (err: unknown) => void;
     maxParticipants?: number;
+    onUserDataUpdate?: (userData: UserData) => void;
+    onUserListUpdate?: (usersData: UserData[]) => void;
   }) {
     this.onPeerListUpdate = options.onPeerListUpdate;
     this.onMessage = options.onMessage;
     this.onError = options.onError || console.error;
     this.maxParticipants = options.maxParticipants ?? 4;
+    this.onUserDataUpdate = options.onUserDataUpdate;
+    this.onUserListUpdate = options.onUserListUpdate;
   }
 
   private setupConnectionHandlers(conn: DataConnection): void {
@@ -109,6 +118,7 @@ export class PeerManager {
             case "join": {
               if (this.isHost && this.peer) {
                 const newPeer = parsed.peerId;
+                const userData = parsed.userData;
                 const currentCount = this.connections.size + 1;
                 if (currentCount > this.maxParticipants) {
                   conn.send(JSON.stringify({ __control: "reject", reason: "room_full" }));
@@ -116,29 +126,67 @@ export class PeerManager {
                   this.connections.delete(remote);
                   return;
                 }
+                
+                // Store user data if provided
+                if (userData) {
+                  this.usersData.set(newPeer, userData);
+                }
+                
                 const existing = Array.from(this.connections.keys()).filter((p) => p !== newPeer);
                 const hostId = this.peer.id;
-                conn.send(JSON.stringify({ __control: "peer-list", peers: [hostId, ...existing] }));
+                
+                // Get all existing user data to send to the new peer
+                const existingUsersData = Array.from(this.usersData.values());
+                
+                // Send peer list with existing user data to the new peer
+                conn.send(JSON.stringify({ 
+                  __control: "peer-list", 
+                  peers: [hostId, ...existing],
+                  usersData: existingUsersData
+                }));
 
+                // Notify existing peers about new peer with user data
                 for (const [pid, c] of this.connections.entries()) {
                   if (pid === newPeer) continue;
                   try {
-                    c.send(JSON.stringify({ __control: "new-peer", peerId: newPeer }));
+                    c.send(JSON.stringify({ __control: "new-peer", peerId: newPeer, userData }));
                   } catch (e) {
                     console.warn("failed to notify existing peer", pid, e);
                   }
                 }
+                
+                // Notify about user data if provided
+                if (userData && this.onUserDataUpdate) {
+                  this.onUserDataUpdate(userData);
+                }
+                
                 this.onPeerListUpdate([...(existing ?? []), hostId, newPeer]);
               }
               break;
             }
             case "peer-list": {
               const list: PeerId[] = parsed.peers || [];
+              const usersData: UserData[] = parsed.usersData || [];
+              if (usersData.length > 0 && this.onUserListUpdate) {
+                this.onUserListUpdate(usersData);
+              }
               this.onPeerListUpdate(list);
               break;
             }
             case "new-peer": {
               const newPeerId = parsed.peerId;
+              const userData = parsed.userData;
+              
+              // Store user data if provided
+              if (userData) {
+                this.usersData.set(newPeerId, userData);
+              }
+              
+              // Notify about user data if provided
+              if (userData && this.onUserDataUpdate) {
+                this.onUserDataUpdate(userData);
+              }
+              
               if (!this.connections.has(newPeerId) && this.peer && this.peer.id !== newPeerId) {
                 try {
                   const dc = this.peer.connect(newPeerId, { reliable: true });
@@ -146,6 +194,18 @@ export class PeerManager {
                   dc.on("error", (e) => this.onError(e));
                 } catch (e) {
                   console.warn("could not connect to new peer", newPeerId, e);
+                }
+              }
+              break;
+            }
+            case "user-update": {
+              const userData = parsed.userData;
+              if (userData) {
+                // Store the updated user data
+                this.usersData.set(userData.id, userData);
+                
+                if (this.onUserDataUpdate) {
+                  this.onUserDataUpdate(userData);
                 }
               }
               break;
@@ -280,6 +340,71 @@ export class PeerManager {
     return peers;
   }
 
+  // Set local user data (for host or when user completes setup)
+  setUserData(userData: UserData): void {
+    if (this.peer && userData.id === this.peer.id) {
+      this.usersData.set(userData.id, userData);
+    }
+  }
+
+  // Send user data update to all connected peers
+  broadcastUserData(userData: UserData): void {
+    // Store locally first
+    this.setUserData(userData);
+    
+    const packet = JSON.stringify({ __control: "user-update", userData });
+    for (const [, conn] of this.connections.entries()) {
+      if (conn.open) {
+        try {
+          conn.send(packet);
+        } catch (e) {
+          console.warn("failed to send user data to", conn.peer, e);
+        }
+      }
+    }
+  }
+
+  // Join room with user data
+  async joinRoomWithUserData(roomId: string, userData: UserData, localId?: PeerId, peerOptions?: PeerJSOption): Promise<void> {
+    if (typeof window === "undefined") throw new Error("joinRoomWithUserData must run on client-side");
+    if (this.peer) this.destroy();
+    this.isHost = false;
+    this.roomId = roomId;
+
+    if (localId) {
+      this.peer = peerOptions ? new Peer(localId, peerOptions) : new Peer(localId);
+    } else {
+      this.peer = peerOptions ? new Peer(peerOptions) : new Peer();
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      if (!this.peer) return reject(new Error("Peer not initialized"));
+      this.peer.on("open", (id) => {
+        const conn = this.peer!.connect(roomId, { reliable: true });
+        conn.on("open", () => {
+          // Include user data in join message
+          conn.send(JSON.stringify({ __control: "join", peerId: id, userData }));
+          this.setupConnectionHandlers(conn);
+          resolve();
+        });
+        conn.on("error", (e) => {
+          this.onError(e);
+          reject(e);
+        });
+      });
+
+      this.peer.on("connection", (conn) => {
+        conn.on("open", () => this.setupConnectionHandlers(conn));
+        conn.on("error", (e) => this.onError(e));
+      });
+
+      this.peer.on("error", (e) => {
+        this.onError(e);
+        reject(e);
+      });
+    });
+  }
+
   destroy(): void {
     try {
       for (const conn of this.connections.values()) {
@@ -290,6 +415,7 @@ export class PeerManager {
         }
       }
       this.connections.clear();
+      this.usersData.clear(); // Clear user data registry
       if (this.peer) {
         try {
           this.peer.destroy();
@@ -414,11 +540,21 @@ export const useRoom = (opts?: { maxParticipants?: number }) => {
     useRoomStore.setState({ localPeerId: null, isHost: false, roomId: null, participants: [], messages: [] });
   }, []);
 
+  // New method for broadcasting user data
+  const broadcastUserData = useCallback((userData: UserData): void => {
+    const mgr = managerRef.current;
+    if (!mgr) {
+      throw new Error("Not connected to a room");
+    }
+    mgr.broadcastUserData(userData);
+  }, []);
+
   return {
     createRoom,
     joinRoom,
     sendObject,
     leaveRoom,
+    broadcastUserData,
     participants: useRoomStore((s) => s.participants),
     messages: useRoomStore((s) => s.messages),
     localPeerId: useRoomStore((s) => s.localPeerId),
