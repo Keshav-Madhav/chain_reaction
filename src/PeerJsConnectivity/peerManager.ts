@@ -5,6 +5,7 @@ import Peer, { DataConnection, PeerJSOption } from "peerjs";
 import { v4 as uuidv4 } from "uuid";
 import { create } from "zustand";
 import { UserData } from "@/stores/userStore";
+import { GameState } from "@/stores/gameStore";
 
 /*********************** Types **************************/
 
@@ -30,7 +31,11 @@ type ControlMessage =
   | { __control: "peer-list"; peers: PeerId[]; usersData?: UserData[] }
   | { __control: "new-peer"; peerId: PeerId; userData?: UserData }
   | { __control: "user-update"; userData: UserData }
-  | { __control: "peer-left"; peerId: PeerId };
+  | { __control: "peer-left"; peerId: PeerId }
+  | { __control: "game-start"; firstPlayerId: string }
+  | { __control: "game-move"; row: number; col: number; playerId: string; playerColor: string }
+  | { __control: "game-state-sync"; gameState: GameState }
+  | { __control: "next-turn"; playerId: string };
 
 /**
  * A message that can be sent or received over a PeerJS DataConnection.
@@ -90,6 +95,10 @@ export class PeerManager {
   onUserDataUpdate?: (userData: UserData) => void;
   onUserListUpdate?: (usersData: UserData[]) => void;
   onPeerLeft?: (peerId: PeerId) => void;
+  onGameStart?: (firstPlayerId: string) => void;
+  onGameMove?: (row: number, col: number, playerId: string, playerColor: string) => void;
+  onGameStateSync?: (gameState: GameState) => void;
+  onNextTurn?: (playerId: string) => void;
 
   constructor(options: {
     onPeerListUpdate: (peers: PeerId[]) => void;
@@ -99,6 +108,10 @@ export class PeerManager {
     onUserDataUpdate?: (userData: UserData) => void;
     onUserListUpdate?: (usersData: UserData[]) => void;
     onPeerLeft?: (peerId: PeerId) => void;
+    onGameStart?: (firstPlayerId: string) => void;
+    onGameMove?: (row: number, col: number, playerId: string, playerColor: string) => void;
+    onGameStateSync?: (gameState: GameState) => void;
+    onNextTurn?: (playerId: string) => void;
   }) {
     this.onPeerListUpdate = options.onPeerListUpdate;
     this.onMessage = options.onMessage;
@@ -107,6 +120,10 @@ export class PeerManager {
     this.onUserDataUpdate = options.onUserDataUpdate;
     this.onUserListUpdate = options.onUserListUpdate;
     this.onPeerLeft = options.onPeerLeft;
+    this.onGameStart = options.onGameStart;
+    this.onGameMove = options.onGameMove;
+    this.onGameStateSync = options.onGameStateSync;
+    this.onNextTurn = options.onNextTurn;
   }
 
   private setupConnectionHandlers(conn: DataConnection): void {
@@ -237,6 +254,30 @@ export class PeerManager {
             }
             case "reject": {
               this.onError({ type: "reject", reason: parsed.reason });
+              break;
+            }
+            case "game-start": {
+              if (this.onGameStart) {
+                this.onGameStart(parsed.firstPlayerId);
+              }
+              break;
+            }
+            case "game-move": {
+              if (this.onGameMove) {
+                this.onGameMove(parsed.row, parsed.col, parsed.playerId, parsed.playerColor);
+              }
+              break;
+            }
+            case "game-state-sync": {
+              if (this.onGameStateSync) {
+                this.onGameStateSync(parsed.gameState);
+              }
+              break;
+            }
+            case "next-turn": {
+              if (this.onNextTurn) {
+                this.onNextTurn(parsed.playerId);
+              }
               break;
             }
           }
@@ -544,6 +585,45 @@ export class PeerManager {
       }
     } catch (e) {
       console.warn("Error destroying peer manager", e);
+    }
+  }
+
+  // Game-related broadcasting methods
+  broadcastGameStart(firstPlayerId: string): void {
+    const packet = JSON.stringify({ __control: "game-start", firstPlayerId });
+    this.sendToAllPeers(packet);
+  }
+
+  broadcastGameMove(row: number, col: number, playerId: string, playerColor: string): void {
+    const packet = JSON.stringify({ 
+      __control: "game-move", 
+      row, 
+      col, 
+      playerId, 
+      playerColor 
+    });
+    this.sendToAllPeers(packet);
+  }
+
+  broadcastGameStateSync(gameState: GameState): void {
+    const packet = JSON.stringify({ __control: "game-state-sync", gameState });
+    this.sendToAllPeers(packet);
+  }
+
+  broadcastNextTurn(playerId: string): void {
+    const packet = JSON.stringify({ __control: "next-turn", playerId });
+    this.sendToAllPeers(packet);
+  }
+
+  private sendToAllPeers(packet: string): void {
+    for (const [, conn] of this.connections.entries()) {
+      if (conn.open) {
+        try {
+          conn.send(packet);
+        } catch (e) {
+          console.warn("failed to send packet to peer", conn.peer, e);
+        }
+      }
     }
   }
 }

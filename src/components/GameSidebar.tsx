@@ -1,14 +1,17 @@
 "use client";
 
-import { Users, Crown, Copy, Check, LogOut } from "lucide-react";
+import { Users, Crown, Copy, Check, LogOut, Play, UserCheck } from "lucide-react";
 import { useState } from "react";
 import { UserData } from "@/stores/userStore";
+import { useGameWithPeers } from "@/hooks/useGameWithPeers";
+import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 
 interface GameSidebarProps {
   participants: UserData[];
   roomId: string;
   localUserId: string;
   onLeaveRoom: () => void;
+  peerManager: PeerManager | null;
 }
 
 export const GameSidebar: React.FC<GameSidebarProps> = ({
@@ -16,8 +19,18 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
   roomId,
   localUserId,
   onLeaveRoom,
+  peerManager,
 }) => {
   const [copiedRoomId, setCopiedRoomId] = useState(false);
+  
+  const {
+    status,
+    firstPlayer,
+    handleStartGame,
+    handleSetFirstPlayer,
+    canStartGame,
+    isHost,
+  } = useGameWithPeers(peerManager);
 
   const copyRoomId = async () => {
     try {
@@ -136,15 +149,66 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
 
       {/* Game Status & Leave Button */}
       <div className="p-6 border-t border-gray-700/50 space-y-3">
-        {/* Game Status */}
+        {/* Game Controls */}
         <div className="bg-gray-700/30 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-2 h-2 rounded-full ${
+              status === "waiting" ? "bg-yellow-400 animate-pulse" :
+              status === "playing" ? "bg-green-400" :
+              "bg-blue-400"
+            }`} />
             <span className="text-white text-sm font-medium">Game Status</span>
           </div>
-          <p className="text-gray-400 text-xs">Waiting for game to start</p>
-          {localUser?.isHost && (
-            <p className="text-blue-400 text-xs mt-1">You can start the game when ready</p>
+          
+          <p className="text-gray-400 text-xs mb-3">
+            {status === "waiting" && "Waiting for game to start"}
+            {status === "playing" && "Game in progress"}
+            {status === "finished" && "Game finished"}
+          </p>
+          
+          {/* Host Controls */}
+          {isHost && status === "waiting" && (
+            <div className="space-y-2">
+              {/* First Player Selection */}
+              <div>
+                <label className="text-gray-300 text-xs mb-1 block">First Player:</label>
+                <select
+                  value={firstPlayer || ""}
+                  onChange={(e) => handleSetFirstPlayer(e.target.value)}
+                  className="w-full bg-gray-600/50 text-white text-xs rounded px-2 py-1 border border-gray-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                >
+                  <option value="">Select first player...</option>
+                  {participants.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.id === localUserId ? "(You)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Start Game Button */}
+              <button
+                onClick={() => firstPlayer && handleStartGame(firstPlayer)}
+                disabled={!canStartGame}
+                className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                  canStartGame
+                    ? "bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30"
+                    : "bg-gray-600/20 text-gray-500 border border-gray-600/30 cursor-not-allowed"
+                }`}
+              >
+                <Play className="w-4 h-4" />
+                Start Game
+              </button>
+              
+              {!canStartGame && participants.length < 2 && (
+                <p className="text-gray-500 text-xs mt-1">Need at least 2 players to start</p>
+              )}
+            </div>
+          )}
+          
+          {/* Non-host waiting message */}
+          {!isHost && status === "waiting" && (
+            <p className="text-blue-400 text-xs">Waiting for host to start the game</p>
           )}
         </div>
 

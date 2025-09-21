@@ -178,5 +178,6 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
     isHost,
     loading,
     error,
+    peerManager: managerRef.current,
   };
 };

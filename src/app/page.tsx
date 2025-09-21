@@ -23,6 +23,7 @@ const ChatPage = () => {
     roomId,
     loading,
     error,
+    peerManager,
   } = useRoomWithUsers();
 
   const {
@@ -179,6 +180,7 @@ const ChatPage = () => {
             roomId={roomId}
             localUserId={localPeerId}
             onLeaveRoom={handleLeaveRoom}
+            peerManager={peerManager}
           />
           
           {/* Center - Game Board */}
@@ -186,7 +188,7 @@ const ChatPage = () => {
             roomId={roomId}
             localUserName={localUser?.name}
             localUserColor={localUser?.color}
-            isMyTurn={false} // TODO: Implement turn logic
+            peerManager={peerManager}
           />
           
           {/* Right Sidebar - Chat */}
