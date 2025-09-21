@@ -196,6 +196,7 @@ const ChatPage = () => {
             localUserId={localPeerId}
             localUserName={localUser?.name}
             localUserColor={localUser?.color}
+            peerManager={peerManager}
           />
         </div>
       );

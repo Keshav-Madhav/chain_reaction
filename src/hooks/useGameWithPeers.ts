@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useGameStore } from "@/stores/gameStore";
 import { useUserStore, UserColor } from "@/stores/userStore";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
+import { useChatStore } from "@/stores/chatStore";
 
 export const useGameWithPeers = (peerManager: PeerManager | null) => {
   const {
@@ -25,6 +26,7 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
   } = useGameStore();
 
   const { localUser, getParticipantsList } = useUserStore();
+  const { addGameEventMessage } = useChatStore();
   const isInitialized = useRef(false);
 
   // Initialize board when component mounts
@@ -42,6 +44,11 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     // Override game callbacks
     peerManager.onGameStart = (firstPlayerId: string) => {
       startGame(firstPlayerId);
+      const participants = getParticipantsList();
+      const firstPlayer = participants.find(p => p.id === firstPlayerId);
+      if (firstPlayer) {
+        addGameEventMessage(`🎮 Game started! ${firstPlayer.name} goes first.`);
+      }
     };
 
     peerManager.onGameMove = (row: number, col: number, playerId: string, playerColor: string) => {
@@ -57,7 +64,18 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
       setCurrentTurn(playerId);
     };
 
-  }, [peerManager, startGame, makeMove, updateGameState, setCurrentTurn]);
+  }, [peerManager, startGame, makeMove, updateGameState, setCurrentTurn, addGameEventMessage, getParticipantsList]);
+
+  // Announce winner in chat when game ends
+  useEffect(() => {
+    if (status === "finished" && winner) {
+      const participants = getParticipantsList();
+      const winnerPlayer = participants.find(p => p.id === winner);
+      if (winnerPlayer) {
+        addGameEventMessage(`🏆 ${winnerPlayer.name} wins the game! Congratulations! 🎉`);
+      }
+    }
+  }, [status, winner, getParticipantsList, addGameEventMessage]);
 
   // Handle starting the game (host only)
   const handleStartGame = useCallback((firstPlayerId: string) => {

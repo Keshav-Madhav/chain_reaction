@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { PeerManager, createRoomId } from "@/PeerJsConnectivity/peerManager";
 import { useUserStore, UserData } from "@/stores/userStore";
+import { useChatStore } from "@/stores/chatStore";
 
 export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const managerRef = useRef<PeerManager | null>(null);
@@ -13,6 +14,7 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const [isHost, setIsHost] = useState<boolean>(false);
 
   const { addParticipant, removeParticipant, clearAllData } = useUserStore();
+  const { addMessage, setUserTyping, removeUserTyping, addSystemMessage } = useChatStore();
 
   useEffect(() => {
     // Handle browser close/refresh events
@@ -58,22 +60,56 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
         onUserDataUpdate: (userData: UserData) => {
           // Handle user data updates from other peers
           console.log("User data update received:", userData);
+          const isNewUser = !useUserStore.getState().participants.has(userData.id);
           addParticipant(userData);
+          
+          // Add system message for new user joining
+          if (isNewUser) {
+            addSystemMessage(`${userData.name} joined the room`);
+          }
         },
         onUserListUpdate: (usersData: UserData[]) => {
           // Handle bulk user data updates (e.g., when joining)
           console.log("User list update received:", usersData);
           usersData.forEach(userData => addParticipant(userData));
+          
+          // Add welcome message for the current user
+          if (usersData.length > 0) {
+            addSystemMessage("Welcome to Chain Reaction! Chat is now active.");
+          }
         },
         onPeerLeft: (peerId: string) => {
           // Handle peer disconnection
           console.log("Peer left:", peerId);
           removeParticipant(peerId);
+          // Add system message about user leaving
+          const user = useUserStore.getState().participants.get(peerId);
+          if (user) {
+            addSystemMessage(`${user.name} left the room`);
+          }
+        },
+        onChatMessage: (message) => {
+          // Handle incoming chat messages
+          addMessage({
+            senderId: message.senderId,
+            senderName: message.senderName,
+            senderColor: message.senderColor,
+            content: message.content,
+            type: "text",
+          });
+        },
+        onUserTyping: (userId, userName, isTyping) => {
+          // Handle typing indicators
+          if (isTyping) {
+            setUserTyping(userId, userName);
+          } else {
+            removeUserTyping(userId);
+          }
         },
       });
     }
     return managerRef.current;
-  }, [opts?.maxParticipants, addParticipant, removeParticipant]);
+  }, [opts?.maxParticipants, addParticipant, removeParticipant, addMessage, setUserTyping, removeUserTyping, addSystemMessage]);
 
   const createRoom = useCallback(async (customRoomId?: string): Promise<string> => {
     if (typeof window === "undefined") {

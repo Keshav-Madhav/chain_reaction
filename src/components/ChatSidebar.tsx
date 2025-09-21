@@ -1,38 +1,114 @@
 "use client";
 
 import { MessageCircle, Send, Smile } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useChatStore } from "@/stores/chatStore";
+import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 
 interface ChatSidebarProps {
   localUserId: string;
   localUserName?: string;
   localUserColor?: string;
+  peerManager: PeerManager | null;
 }
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   localUserId,
   localUserName = "Player",
   localUserColor = "#4ECDC4",
+  peerManager,
 }) => {
   const [message, setMessage] = useState("");
-  const [messages] = useState<Array<{id: string, user: string, text: string, color: string, timestamp: Date}>>([
-    // Placeholder messages
-    {
-      id: "1",
-      user: "System",
-      text: "Welcome to Chain Reaction! Chat will be available soon.",
-      color: "#6B7280",
-      timestamp: new Date(),
-    }
-  ]);
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const {
+    messages,
+    typingUsers,
+    addMessage,
+    markAsRead,
+  } = useChatStore();
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Mark messages as read when component is visible
+  useEffect(() => {
+    markAsRead();
+  }, [markAsRead]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
-    
-    // TODO: Implement actual message sending
-    console.log("Sending message:", message);
+    if (!message.trim() || !peerManager) return;
+
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = Date.now();
+
+    // Add message to local store
+    addMessage({
+      senderId: localUserId,
+      senderName: localUserName,
+      senderColor: localUserColor,
+      content: message.trim(),
+      type: "text",
+    });
+
+    // Broadcast to other peers
+    peerManager.broadcastChatMessage(
+      messageId,
+      localUserId,
+      localUserName,
+      localUserColor,
+      message.trim(),
+      timestamp
+    );
+
+    // Clear input and stop typing
     setMessage("");
+    handleStopTyping();
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+    
+    if (!isTyping && e.target.value.trim() && peerManager) {
+      setIsTyping(true);
+      peerManager.broadcastUserTyping(localUserId, localUserName, true);
+    }
+
+    // Reset typing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      handleStopTyping();
+    }, 2000);
+  };
+
+  const handleStopTyping = () => {
+    if (isTyping && peerManager) {
+      setIsTyping(false);
+      peerManager.broadcastUserTyping(localUserId, localUserName, false);
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+  };
+
+  // Get list of users currently typing (excluding self)
+  const typingUsersList = Array.from(typingUsers.values())
+    .filter(user => user.userId !== localUserId)
+    .map(user => user.userName);
+
+  const formatTimestamp = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   };
 
   return (
@@ -53,8 +129,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       {/* Messages Area */}
       <div className="flex-1 p-4 overflow-y-auto space-y-3">
         {messages.map((msg) => {
-          const isSystem = msg.user === "System";
-          const isLocalUser = msg.user === localUserName;
+          const isSystem = msg.type === "system" || msg.type === "game-event";
+          const isLocalUser = msg.senderId === localUserId;
           
           return (
             <div 
@@ -72,25 +148,48 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                   }
                 `}
               >
-                {!isSystem && !isLocalUser && (
+                {!isSystem && (
                   <div className="flex items-center gap-2 mb-1">
                     <div 
                       className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: msg.color }}
+                      style={{ backgroundColor: msg.senderColor }}
                     />
-                    <span className="text-white text-xs font-medium">{msg.user}</span>
+
+                    <span 
+                      className="text-sm font-medium mr-4"
+                      style={{ color: msg.senderColor }}
+                    >
+                      {isLocalUser ? "You" : msg.senderName}
+                    </span>
+                    
+                    <p className="text-gray-500 text-xs ml-auto">
+                      {formatTimestamp(msg.timestamp)}
+                    </p>
                   </div>
                 )}
                 <p className={`text-sm ${isSystem ? "text-gray-400" : "text-white"}`}>
-                  {msg.text}
-                </p>
-                <p className="text-gray-500 text-xs mt-1">
-                  {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {msg.content}
                 </p>
               </div>
             </div>
           );
         })}
+        
+        {/* Typing indicators */}
+        {typingUsersList.length > 0 && (
+          <div className="flex justify-start">
+            <div className="bg-gray-700/30 rounded-lg p-3 max-w-[80%]">
+              <p className="text-gray-400 text-xs italic">
+                {typingUsersList.length === 1 
+                  ? `${typingUsersList[0]} is typing...`
+                  : `${typingUsersList.slice(0, -1).join(", ")} and ${typingUsersList[typingUsersList.length - 1]} are typing...`
+                }
+              </p>
+            </div>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Message Input */}
@@ -100,31 +199,33 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             <input
               type="text"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={handleInputChange}
               placeholder="Type a message..."
               className="w-full bg-gray-700/50 text-white placeholder-gray-400 border border-gray-600/50 rounded-lg px-3 py-2 pr-20 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 text-sm"
-              disabled={true} // Disabled for now since chat is not implemented
+              disabled={!peerManager}
             />
             <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
               <button
                 type="button"
                 className="text-gray-400 hover:text-white transition-colors p-1"
-                disabled={true}
+                disabled={!peerManager}
               >
                 <Smile className="w-4 h-4" />
               </button>
               <button
                 type="submit"
-                disabled={!message.trim() || true} // Disabled for now
+                disabled={!message.trim() || !peerManager}
                 className="text-gray-400 hover:text-blue-400 transition-colors p-1 disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <p className="text-gray-500 text-xs text-center">
-            Chat functionality coming soon
-          </p>
+          {!peerManager && (
+            <p className="text-gray-500 text-xs text-center">
+              Chat will be available once connected
+            </p>
+          )}
         </form>
       </div>
     </div>

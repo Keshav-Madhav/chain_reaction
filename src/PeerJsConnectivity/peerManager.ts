@@ -35,7 +35,9 @@ type ControlMessage =
   | { __control: "game-start"; firstPlayerId: string }
   | { __control: "game-move"; row: number; col: number; playerId: string; playerColor: string }
   | { __control: "game-state-sync"; gameState: GameState }
-  | { __control: "next-turn"; playerId: string };
+  | { __control: "next-turn"; playerId: string }
+  | { __control: "chat-message"; messageId: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }
+  | { __control: "user-typing"; userId: string; userName: string; isTyping: boolean };
 
 /**
  * A message that can be sent or received over a PeerJS DataConnection.
@@ -99,6 +101,8 @@ export class PeerManager {
   onGameMove?: (row: number, col: number, playerId: string, playerColor: string) => void;
   onGameStateSync?: (gameState: GameState) => void;
   onNextTurn?: (playerId: string) => void;
+  onChatMessage?: (message: { id: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }) => void;
+  onUserTyping?: (userId: string, userName: string, isTyping: boolean) => void;
 
   constructor(options: {
     onPeerListUpdate: (peers: PeerId[]) => void;
@@ -112,6 +116,8 @@ export class PeerManager {
     onGameMove?: (row: number, col: number, playerId: string, playerColor: string) => void;
     onGameStateSync?: (gameState: GameState) => void;
     onNextTurn?: (playerId: string) => void;
+    onChatMessage?: (message: { id: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }) => void;
+    onUserTyping?: (userId: string, userName: string, isTyping: boolean) => void;
   }) {
     this.onPeerListUpdate = options.onPeerListUpdate;
     this.onMessage = options.onMessage;
@@ -124,6 +130,8 @@ export class PeerManager {
     this.onGameMove = options.onGameMove;
     this.onGameStateSync = options.onGameStateSync;
     this.onNextTurn = options.onNextTurn;
+    this.onChatMessage = options.onChatMessage;
+    this.onUserTyping = options.onUserTyping;
   }
 
   private setupConnectionHandlers(conn: DataConnection): void {
@@ -277,6 +285,25 @@ export class PeerManager {
             case "next-turn": {
               if (this.onNextTurn) {
                 this.onNextTurn(parsed.playerId);
+              }
+              break;
+            }
+            case "chat-message": {
+              if (this.onChatMessage) {
+                this.onChatMessage({
+                  id: parsed.messageId,
+                  senderId: parsed.senderId,
+                  senderName: parsed.senderName,
+                  senderColor: parsed.senderColor,
+                  content: parsed.content,
+                  timestamp: parsed.timestamp,
+                });
+              }
+              break;
+            }
+            case "user-typing": {
+              if (this.onUserTyping) {
+                this.onUserTyping(parsed.userId, parsed.userName, parsed.isTyping);
               }
               break;
             }
@@ -612,6 +639,30 @@ export class PeerManager {
 
   broadcastNextTurn(playerId: string): void {
     const packet = JSON.stringify({ __control: "next-turn", playerId });
+    this.sendToAllPeers(packet);
+  }
+
+  // Chat-related broadcasting methods
+  broadcastChatMessage(messageId: string, senderId: string, senderName: string, senderColor: string, content: string, timestamp: number): void {
+    const packet = JSON.stringify({ 
+      __control: "chat-message", 
+      messageId,
+      senderId,
+      senderName,
+      senderColor,
+      content,
+      timestamp
+    });
+    this.sendToAllPeers(packet);
+  }
+
+  broadcastUserTyping(userId: string, userName: string, isTyping: boolean): void {
+    const packet = JSON.stringify({ 
+      __control: "user-typing", 
+      userId,
+      userName,
+      isTyping
+    });
     this.sendToAllPeers(packet);
   }
 
