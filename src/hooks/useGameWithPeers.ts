@@ -22,6 +22,7 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     updateGameState,
     getGameState,
     isValidMove,
+    getPlayerAtomCounts,
   } = useGameStore();
 
   const { localUser, getParticipantsList } = useUserStore();
@@ -144,6 +145,14 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     );
   }, [isHost, status, getParticipantsList, firstPlayer]);
 
+  // Get current turn player name
+  const getCurrentTurnPlayerName = useCallback(() => {
+    if (!currentTurn) return null;
+    const participants = getParticipantsList();
+    const currentPlayer = participants.find(p => p.id === currentTurn);
+    return currentPlayer?.name || null;
+  }, [currentTurn, getParticipantsList]);
+
   return {
     // Game state
     board,
@@ -164,5 +173,7 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
     canStartGame: canStartGame(),
     isHost,
     getGameState,
+    getPlayerAtomCounts,
+    getCurrentTurnPlayerName,
   };
 };

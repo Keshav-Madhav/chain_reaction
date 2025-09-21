@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, Crown, Copy, Check, LogOut, Play, UserCheck } from "lucide-react";
+import { Users, Crown, Copy, Check, LogOut, Play } from "lucide-react";
 import { useState } from "react";
 import { UserData } from "@/stores/userStore";
 import { useGameWithPeers } from "@/hooks/useGameWithPeers";
@@ -26,10 +26,12 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
   const {
     status,
     firstPlayer,
+    currentTurn,
     handleStartGame,
     handleSetFirstPlayer,
     canStartGame,
     isHost,
+    getPlayerAtomCounts,
   } = useGameWithPeers(peerManager);
 
   const copyRoomId = async () => {
@@ -41,8 +43,6 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
       console.error("Failed to copy room ID:", err);
     }
   };
-
-  const localUser = participants.find(p => p.id === localUserId);
 
   return (
     <div className="w-80 bg-gray-800/50 backdrop-blur-xl border-r border-gray-700/50 flex flex-col h-full">
@@ -95,6 +95,9 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
         <div className="space-y-3">
           {participants.map((participant) => {
             const isYou = participant.id === localUserId;
+            const isCurrentTurn = currentTurn === participant.id && status === "playing";
+            const atomCounts = getPlayerAtomCounts();
+            const atomCount = atomCounts.get(participant.id) || 0;
             
             return (
               <div 
@@ -103,30 +106,41 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
                   flex items-center gap-3 p-3 rounded-lg transition-all duration-200
                   ${isYou 
                     ? 'bg-blue-500/20 border border-blue-500/30' 
-                    : 'bg-gray-700/30'
+                    : isCurrentTurn
+                      ? 'bg-green-500/20 border border-green-500/30'
+                      : 'bg-gray-700/30'
                   }
                 `}
               >
                 <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg"
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg relative"
                   style={{ backgroundColor: participant.color }}
                 >
                   {participant.name.charAt(0).toUpperCase()}
+                  {isCurrentTurn && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-pulse" />
+                  )}
                 </div>
                 
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="text-white font-medium text-sm">
                       {participant.name}
-                      {isYou && <span className="text-blue-400 text-xs">(You)</span>}
+                      {isYou && <span className="text-blue-400 text-xs"> (You)</span>}
                     </h3>
                     {participant.isHost && (
                       <Crown className="w-3 h-3 text-yellow-400" />
                     )}
                   </div>
-                  <p className="text-gray-400 text-xs">
-                    {participant.isHost ? "Host" : "Player"}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    {isCurrentTurn && <span className="text-green-400 text-xs">Turn</span>}
+
+                    {status === "playing" && (
+                      <span className="text-cyan-400 text-xs">
+                        • {atomCount} atoms
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
                 <div 

@@ -49,6 +49,7 @@ interface GameActions {
   getCellLimit: (row: number, col: number) => number;
   isValidMove: (row: number, col: number, playerId: string) => boolean;
   checkWinner: () => string | null;
+  getPlayerAtomCounts: () => Map<string, number>;
   
   // State synchronization
   updateGameState: (newState: Partial<GameState>) => void;
@@ -263,6 +264,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     
     return null;
+  },
+
+  // Get atom counts for each player
+  getPlayerAtomCounts: () => {
+    const { board } = get();
+    const atomCounts = new Map<string, number>();
+    
+    board.forEach(row => {
+      row.forEach(cell => {
+        if (cell.playerId && cell.dots > 0) {
+          const currentCount = atomCounts.get(cell.playerId) || 0;
+          atomCounts.set(cell.playerId, currentCount + cell.dots);
+        }
+      });
+    });
+    
+    return atomCounts;
   },
 
   // Update game state (for peer sync)

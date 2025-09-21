@@ -26,6 +26,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     handleNewGame,
     canMakeMove,
     isHost,
+    getCurrentTurnPlayerName,
   } = useGameWithPeers(peerManager);
 
   const handleCellClick = (row: number, col: number) => {
@@ -113,6 +114,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       {/* Game Board */}
       <div className="flex-1 p-6 flex items-center justify-center">
         <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 backdrop-blur-sm">
+          <div className="flex items-center justify-center gap-2 text-gray-400 mb-4">
+            <Grid3X3 className="w-6 h-6" />
+            <span className="text-lg">
+              {status === "waiting" && "Waiting for game to start"}
+              {status === "playing" && `Game in progress - ${canMakeMove ? "Your turn" : "Waiting for turn"}`}
+              {status === "finished" && winner && "Game finished"}
+            </span>
+          </div>
+
           <div 
             className="grid gap-2 w-fit mx-auto"
             style={{ gridTemplateColumns: `repeat(${board[0]?.length || 8}, 1fr)` }}
@@ -142,51 +152,32 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           
           {/* Game Info */}
           <div className="mt-6 text-center">
-            <div className="flex items-center justify-center gap-2 text-gray-400">
-              <Grid3X3 className="w-4 h-4" />
-              <span className="text-sm">
-                {status === "waiting" && "Waiting for game to start"}
-                {status === "playing" && `Game in progress - ${canMakeMove ? "Your turn" : "Waiting for turn"}`}
-                {status === "finished" && winner && "Game finished"}
-              </span>
-            </div>
-            <div className="mt-2 flex items-center justify-center gap-4 text-xs text-gray-500">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-yellow-500 rounded-sm" />
-                <span>Corner (1 atom limit)</span>
+            {status === "playing" && getCurrentTurnPlayerName && (
+              <div className="text-center">
+                <span className="text-blue-400 text-sm font-medium">
+                  {getCurrentTurnPlayerName()} is making a move
+                </span>
               </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-orange-500 rounded-sm" />
-                <span>Edge (2 atoms limit)</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-gray-500 rounded-sm" />
-                <span>Center (3 atoms limit)</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Current Player Info */}
       <div className="p-4 border-t border-gray-700/50">
-        <div className="flex items-center justify-center gap-3">
-          <div 
-            className="w-6 h-6 rounded-full border-2 border-white/20"
-            style={{ backgroundColor: localUserColor }}
-          />
-          <span className="text-white font-medium">{localUserName}</span>
-          {status === "playing" && (
-            canMakeMove ? (
-              <div className="flex items-center gap-1 text-green-400">
-                <span className="text-sm">Make your move</span>
-              </div>
-            ) : (
-              <span className="text-gray-400 text-sm">Waiting for turn</span>
-            )
-          )}
-          {status === "waiting" && (
-            <span className="text-gray-400 text-sm">Waiting for game to start</span>
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-3">
+            {status === "waiting" && (
+              <span className="text-gray-400 text-sm">Waiting for game to start</span>
+            )}
+          </div>
+          {/* Whose turn indicator */}
+          {status === "playing" && getCurrentTurnPlayerName && (
+            <div className="text-center">
+              <span className="text-cyan-400 text-lg">
+                Current turn: {getCurrentTurnPlayerName()}
+              </span>
+            </div>
           )}
         </div>
       </div>
