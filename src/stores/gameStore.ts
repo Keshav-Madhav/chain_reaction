@@ -142,10 +142,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getCellLimit: (row: number, col: number) => {
     const cellType = get().getCellType(row, col);
     switch (cellType) {
-      case "corner": return 1;
-      case "edge": return 2;
-      case "center": return 3;
-      default: return 1;
+      case "corner": return 2;
+      case "edge": return 3;
+      case "center": return 4;
+      default: return 2;
     }
   },
 
@@ -191,9 +191,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       explosionQueue.push({row, col});
     }
     
-    // Process explosions
-    while (explosionQueue.length > 0) {
+    // Process explosions with a basic safeguard
+    const MAX_EXPLOSIONS = 500; // Conservative limit as backup safety net
+    let explosionCount = 0;
+    
+    while (explosionQueue.length > 0 && explosionCount < MAX_EXPLOSIONS) {
       const {row: explodeRow, col: explodeCol} = explosionQueue.shift()!;
+      explosionCount++;
+      
       const explodingCell = newBoard[explodeRow][explodeCol];
       
       // Reset exploding cell
@@ -225,6 +230,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         }
       });
+    }
+    
+    // Log warning if we hit the explosion limit (should be very rare now)
+    if (explosionCount >= MAX_EXPLOSIONS) {
+      console.warn(`Chain reaction hit maximum explosion limit (${MAX_EXPLOSIONS}). This may indicate an unexpected edge case.`);
     }
     
     // Update move history
