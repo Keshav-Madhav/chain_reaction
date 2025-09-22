@@ -216,7 +216,7 @@ export const GameSidebar: React.FC<GameSidebarProps> = ({
               {/* Start Game Button */}
               <button
                 onClick={() => firstPlayer && handleStartGame(firstPlayer)}
-                disabled={!canStartGame}
+                // disabled={!canStartGame}
                 className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
                   canStartGame
                     ? "bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30"

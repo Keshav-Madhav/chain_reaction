@@ -5,6 +5,7 @@ import { useGameWithPeers } from "@/hooks/useGameWithPeers";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 import { WinnerModal } from "@/components/WinnerModal";
 import { useUserStore } from "@/stores/userStore";
+import { AnimatedAtom } from "@/components/AnimatedAtom";
 
 interface GameBoardProps {
   roomId: string;
@@ -30,6 +31,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   
   const participants = useUserStore((state) => state.participants);
 
+  // Helper function to get cell limit based on position
+  const getCellLimit = (row: number, col: number) => {
+    const rows = board.length;
+    const cols = board[0]?.length || 0;
+    const isCorner = (row === 0 || row === rows - 1) && (col === 0 || col === cols - 1);
+    const isEdge = row === 0 || row === rows - 1 || col === 0 || col === cols - 1;
+    
+    if (isCorner) return 2;
+    if (isEdge) return 3;
+    return 4; // center cell
+  };
+
+  // Helper function to check if cell is about to explode
+  const isAboutToExplode = (row: number, col: number) => {
+    const cell = board[row]?.[col];
+    if (!cell || cell.dots === 0) return false;
+    return cell.dots === getCellLimit(row, col);
+  };
+
   // Get winner information for modal
   const getWinnerInfo = () => {
     if (!winner) return null;
@@ -48,83 +68,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     handleMakeMove(row, col);
   };
 
-  const renderAtoms = (dots: number, color: string | null) => {
+  const renderAtoms = (dots: number, color: string | null, row: number, col: number) => {
     if (dots === 0) return null;
-    
-    // SVG Atom component
-    const AtomSVG = ({ atomColor }: { atomColor: string }) => (
-      <svg 
-        className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 rotate-45" 
-        viewBox="0 0 32 32" 
-        fill="none"
-      >
-        {/* Nucleus */}
-        <circle 
-          cx="16" 
-          cy="16" 
-          r="3" 
-          fill={atomColor}
-          opacity="0.9"
-        />
-        {/* Electron orbits */}
-        <ellipse 
-          cx="16" 
-          cy="16" 
-          rx="12" 
-          ry="6" 
-          stroke={atomColor} 
-          strokeWidth="1.5" 
-          fill="none"
-          opacity="0.6"
-        />
-        <ellipse 
-          cx="16" 
-          cy="16" 
-          rx="6" 
-          ry="12" 
-          stroke={atomColor} 
-          strokeWidth="1.5" 
-          fill="none"
-          opacity="0.6"
-        />
-        {/* Electrons */}
-        <circle 
-          cx="4" 
-          cy="16" 
-          r="1.5" 
-          fill={atomColor}
-          opacity="0.8"
-        />
-        <circle 
-          cx="28" 
-          cy="16" 
-          r="1.5" 
-          fill={atomColor}
-          opacity="0.8"
-        />
-        <circle 
-          cx="16" 
-          cy="4" 
-          r="1.5" 
-          fill={atomColor}
-          opacity="0.8"
-        />
-        <circle 
-          cx="16" 
-          cy="28" 
-          r="1.5" 
-          fill={atomColor}
-          opacity="0.8"
-        />
-      </svg>
-    );
     
     const atomElements = [];
     const atomColor = color || "#6B7280";
+    const aboutToExplode = isAboutToExplode(row, col);
+    const speedMultiplier = aboutToExplode ? 3 : 1; // 3x speed when about to explode
     
     for (let i = 0; i < dots; i++) {
       atomElements.push(
-        <AtomSVG key={i} atomColor={atomColor} />
+        <AnimatedAtom 
+          key={`${row}-${col}-${i}-${speedMultiplier}`} 
+          atomColor={atomColor} 
+          speedMultiplier={speedMultiplier} 
+        />
       );
     }
     
@@ -228,7 +186,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     touchAction: 'manipulation'
                   }}
                 >
-                  {renderAtoms(cell.dots, cell.playerColor)}
+                  {renderAtoms(cell.dots, cell.playerColor, rowIndex, colIndex)}
                 </button>
               ))
             )}
