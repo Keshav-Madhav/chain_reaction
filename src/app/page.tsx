@@ -21,6 +21,7 @@ const ChatPage = () => {
     roomId,
     loading,
     error,
+    connectionStatus,
     peerManager,
   } = useRoomWithUsers();
 
@@ -142,6 +143,7 @@ const ChatPage = () => {
           onJoinRoom={handleJoinRoom}
           loading={loading}
           error={connectionError}
+          connectionStatus={connectionStatus}
         />
       );
 

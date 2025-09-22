@@ -77,6 +77,17 @@ export const useRoomStore = create<RoomState>((set) => ({
 
 /*********************** Utilities ************************/
 
+// Utility function to add timeout to promises
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Connection timeout: ${operation} took longer than ${timeoutMs/1000} seconds. Please check your network connection and try again.`));
+    }, timeoutMs);
+  });
+  
+  return Promise.race([promise, timeoutPromise]);
+}
+
 export const createRoomId = (): string => {
   // Use a full UUID for a robust, unique room ID.
   return uuidv4();
@@ -103,6 +114,7 @@ export class PeerManager {
   onNextTurn?: (playerId: string) => void;
   onChatMessage?: (message: { id: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }) => void;
   onUserTyping?: (userId: string, userName: string, isTyping: boolean) => void;
+  connectionTimeout: number; // Connection timeout in milliseconds
 
   constructor(options: {
     onPeerListUpdate: (peers: PeerId[]) => void;
@@ -118,6 +130,7 @@ export class PeerManager {
     onNextTurn?: (playerId: string) => void;
     onChatMessage?: (message: { id: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }) => void;
     onUserTyping?: (userId: string, userName: string, isTyping: boolean) => void;
+    connectionTimeout?: number; // Timeout in milliseconds
   }) {
     this.onPeerListUpdate = options.onPeerListUpdate;
     this.onMessage = options.onMessage;
@@ -132,6 +145,7 @@ export class PeerManager {
     this.onNextTurn = options.onNextTurn;
     this.onChatMessage = options.onChatMessage;
     this.onUserTyping = options.onUserTyping;
+    this.connectionTimeout = options.connectionTimeout ?? 30000; // Default 30 seconds
   }
 
   private setupConnectionHandlers(conn: DataConnection): void {
@@ -387,7 +401,7 @@ export class PeerManager {
 
     this.peer = new Peer(roomId, peerOptions);
 
-    return new Promise<void>((resolve, reject) => {
+    const connectionPromise = new Promise<void>((resolve, reject) => {
       if (!this.peer) return reject(new Error("Peer not initialized"));
       this.peer.on("open", (id) => {
         this.onPeerListUpdate([id]);
@@ -406,6 +420,21 @@ export class PeerManager {
         reject(e);
       });
     });
+
+    try {
+      await withTimeout(connectionPromise, this.connectionTimeout, "create room");
+    } catch (error) {
+      // Clean up on timeout or error
+      if (this.peer) {
+        try {
+          this.peer.destroy();
+        } catch (e) {
+          console.warn("Error destroying peer after timeout:", e);
+        }
+        this.peer = null;
+      }
+      throw error;
+    }
   }
 
   async joinRoom(roomId: string, localId?: PeerId, peerOptions?: PeerJSOption): Promise<void> {
@@ -420,16 +449,25 @@ export class PeerManager {
       this.peer = peerOptions ? new Peer(peerOptions) : new Peer();
     }
 
-    return new Promise<void>((resolve, reject) => {
+    const connectionPromise = new Promise<void>((resolve, reject) => {
       if (!this.peer) return reject(new Error("Peer not initialized"));
       this.peer.on("open", (id) => {
         const conn = this.peer!.connect(roomId, { reliable: true });
+        
+        // Set a shorter timeout specifically for room connection
+        const roomConnectionTimeout = setTimeout(() => {
+          conn.close();
+          reject(new Error(`Unable to connect to room "${roomId}". The room may not exist or the host may be offline.`));
+        }, 10000); // 10 second timeout for room connection
+        
         conn.on("open", () => {
+          clearTimeout(roomConnectionTimeout);
           conn.send(JSON.stringify({ __control: "join", peerId: id }));
           this.setupConnectionHandlers(conn);
           resolve();
         });
         conn.on("error", (e) => {
+          clearTimeout(roomConnectionTimeout);
           this.onError(e);
           reject(e);
         });
@@ -445,6 +483,21 @@ export class PeerManager {
         reject(e);
       });
     });
+
+    try {
+      await withTimeout(connectionPromise, this.connectionTimeout, `join room ${roomId}`);
+    } catch (error) {
+      // Clean up on timeout or error
+      if (this.peer) {
+        try {
+          this.peer.destroy();
+        } catch (e) {
+          console.warn("Error destroying peer after timeout:", e);
+        }
+        this.peer = null;
+      }
+      throw error;
+    }
   }
 
   sendToAll(payload: unknown, type?: string): void {
@@ -526,17 +579,26 @@ export class PeerManager {
       this.peer = peerOptions ? new Peer(peerOptions) : new Peer();
     }
 
-    return new Promise<void>((resolve, reject) => {
+    const connectionPromise = new Promise<void>((resolve, reject) => {
       if (!this.peer) return reject(new Error("Peer not initialized"));
       this.peer.on("open", (id) => {
         const conn = this.peer!.connect(roomId, { reliable: true });
+        
+        // Set a shorter timeout specifically for room connection
+        const roomConnectionTimeout = setTimeout(() => {
+          conn.close();
+          reject(new Error(`Unable to connect to room "${roomId}". The room may not exist or the host may be offline.`));
+        }, 10000); // 10 second timeout for room connection
+        
         conn.on("open", () => {
+          clearTimeout(roomConnectionTimeout);
           // Include user data in join message
           conn.send(JSON.stringify({ __control: "join", peerId: id, userData }));
           this.setupConnectionHandlers(conn);
           resolve();
         });
         conn.on("error", (e) => {
+          clearTimeout(roomConnectionTimeout);
           this.onError(e);
           reject(e);
         });
@@ -552,6 +614,21 @@ export class PeerManager {
         reject(e);
       });
     });
+
+    try {
+      await withTimeout(connectionPromise, this.connectionTimeout, `join room ${roomId} with user data`);
+    } catch (error) {
+      // Clean up on timeout or error
+      if (this.peer) {
+        try {
+          this.peer.destroy();
+        } catch (e) {
+          console.warn("Error destroying peer after timeout:", e);
+        }
+        this.peer = null;
+      }
+      throw error;
+    }
   }
 
   // Gracefully leave the room and notify others

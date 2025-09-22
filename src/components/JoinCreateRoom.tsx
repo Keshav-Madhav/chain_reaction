@@ -9,6 +9,7 @@ interface JoinCreateRoomProps {
   onJoinRoom: (roomId: string) => Promise<void>;
   loading: boolean;
   error: string | null;
+  connectionStatus?: string | null;
 }
 
 export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
@@ -16,6 +17,7 @@ export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
   onJoinRoom,
   loading,
   error,
+  connectionStatus,
 }) => {
   const [inputRoomId, setInputRoomId] = useState("");
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
@@ -101,6 +103,12 @@ export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
               <span className="text-green-300 text-sm">Room ID copied to clipboard!</span>
             </div>
           )}
+          
+          {loading && connectionStatus && (
+            <div className="mt-3 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+              <p className="text-blue-300 text-sm text-center">{connectionStatus}</p>
+            </div>
+          )}
         </div>
 
         {/* Join Room Card */}
@@ -155,6 +163,13 @@ export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
             </button>
           </form>
         </div>
+
+        {/* Connection Status Display */}
+        {loading && connectionStatus && (
+          <div className="mt-6 p-4 bg-blue-500/20 border border-blue-500/30 rounded-xl">
+            <p className="text-blue-300 text-sm text-center">{connectionStatus}</p>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (

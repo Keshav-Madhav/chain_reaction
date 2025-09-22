@@ -12,6 +12,7 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [localPeerId, setLocalPeerId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
 
   const { addParticipant, removeParticipant, clearAllData } = useUserStore();
   const { addMessage, setUserTyping, removeUserTyping, addSystemMessage } = useChatStore();
@@ -117,20 +118,43 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
     }
     setLoading(true);
     setError(null);
+    setConnectionStatus("Initializing room...");
     const id = customRoomId ?? createRoomId();
     const mgr = ensureManager();
-    try {
-      await mgr.createHost(id);
-      setRoomId(id);
-      setIsHost(true);
-      setLocalPeerId(mgr.peer?.id ?? null);
-      setLoading(false);
-      return id;
-    } catch (e) {
-      setError(e);
-      setLoading(false);
-      throw e;
+    
+    // Retry logic for creating room
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        setConnectionStatus(attempt > 0 ? `Retrying (${attempt + 1}/${maxRetries})...` : "Creating room...");
+        await mgr.createHost(id);
+        setRoomId(id);
+        setIsHost(true);
+        setLocalPeerId(mgr.peer?.id ?? null);
+        setLoading(false);
+        setConnectionStatus(null);
+        return id;
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        
+        // Don't retry on certain types of errors or last attempt
+        if (lastError.message.includes('ID taken') || attempt === maxRetries - 1) {
+          break;
+        }
+        
+        setConnectionStatus(`Connection failed, retrying in ${Math.pow(2, attempt)} seconds...`);
+        // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
+    
+    setError(lastError);
+    setLoading(false);
+    setConnectionStatus(null);
+    throw lastError;
   }, [ensureManager]);
 
   const joinRoom = useCallback(async (roomIdToJoin: string, preferredId?: string): Promise<void> => {
@@ -139,18 +163,48 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
     }
     setLoading(true);
     setError(null);
+    setConnectionStatus("Connecting to signaling server...");
     const mgr = ensureManager();
-    try {
-      await mgr.joinRoom(roomIdToJoin, preferredId);
-      setRoomId(roomIdToJoin);
-      setIsHost(false);
-      setLocalPeerId(mgr.peer?.id ?? null);
-      setLoading(false);
-    } catch (e) {
-      setError(e);
-      setLoading(false);
-      throw e;
+    
+    // Retry logic with exponential backoff
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        setConnectionStatus(
+          attempt > 0 
+            ? `Retrying connection (${attempt + 1}/${maxRetries})...` 
+            : `Joining room "${roomIdToJoin}"...`
+        );
+        await mgr.joinRoom(roomIdToJoin, preferredId);
+        setRoomId(roomIdToJoin);
+        setIsHost(false);
+        setLocalPeerId(mgr.peer?.id ?? null);
+        setLoading(false);
+        setConnectionStatus(null);
+        return;
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        
+        // Don't retry on certain types of errors
+        if (lastError.message.includes('room may not exist') || 
+            lastError.message.includes('ID taken') ||
+            attempt === maxRetries - 1) {
+          break;
+        }
+        
+        setConnectionStatus(`Connection failed, retrying in ${Math.pow(2, attempt)} seconds...`);
+        // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
+    
+    setError(lastError);
+    setLoading(false);
+    setConnectionStatus(null);
+    throw lastError;
   }, [ensureManager]);
 
   const joinRoomWithUserData = useCallback(async (roomIdToJoin: string, userData: UserData, preferredId?: string): Promise<void> => {
@@ -199,6 +253,7 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
     setRoomId(null);
     setLocalPeerId(null);
     setIsHost(false);
+    setConnectionStatus(null);
     clearAllData();
   }, [clearAllData]);
 
@@ -214,6 +269,7 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
     isHost,
     loading,
     error,
+    connectionStatus,
     peerManager: managerRef.current,
   };
 };
