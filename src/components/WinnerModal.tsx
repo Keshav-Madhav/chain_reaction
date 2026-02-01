@@ -8,6 +8,7 @@ interface WinnerModalProps {
   winnerName: string;
   winnerColor: string;
   onNewGame: () => void;
+  onDismiss: () => void;
   isHost: boolean;
 }
 
@@ -15,6 +16,7 @@ export const WinnerModal: React.FC<WinnerModalProps> = ({
   winnerName,
   winnerColor,
   onNewGame,
+  onDismiss,
   isHost,
 }) => {
   const gameStats = useGameStore((state) => state.gameStats);
@@ -136,6 +138,13 @@ export const WinnerModal: React.FC<WinnerModalProps> = ({
               </span>
             </div>
           )}
+          
+          <button
+            onClick={onDismiss}
+            className="w-full bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 hover:text-white font-medium py-2 px-6 rounded-xl transition-colors duration-200"
+          >
+            View Final Board
+          </button>
           
           {!isHost && (
             <div className="text-center">

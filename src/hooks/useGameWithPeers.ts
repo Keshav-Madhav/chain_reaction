@@ -5,6 +5,7 @@ import { useGameStore } from "@/stores/gameStore";
 import { useUserStore, UserColor } from "@/stores/userStore";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 import { useChatStore } from "@/stores/chatStore";
+import { useExplosionAnimationStore } from "@/stores/explosionAnimationStore";
 
 export const useGameWithPeers = (peerManager: PeerManager | null) => {
   const {
@@ -49,6 +50,12 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
 
     peerManager.onGameStateSync = (gameState) => {
       const wasReset = gameState.status === "waiting" && gameState.moveHistory.length === 0;
+      
+      // Clear animations on reset
+      if (wasReset) {
+        useExplosionAnimationStore.getState().clearAllAnimations();
+      }
+      
       updateGameState(gameState);
       
       // Notify about game state sync if it's a reset
@@ -120,6 +127,9 @@ export const useGameWithPeers = (peerManager: PeerManager | null) => {
   // Handle new game (host only)
   const handleNewGame = useCallback(() => {
     if (!peerManager || !peerManager.isHost) return;
+    
+    // Clear any ongoing explosion animations
+    useExplosionAnimationStore.getState().clearAllAnimations();
     
     // Reset game locally
     resetGame();

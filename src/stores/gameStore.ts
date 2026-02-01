@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { UserColor } from "./userStore";
+import { useExplosionAnimationStore } from "./explosionAnimationStore";
 
 export type GameStatus = "waiting" | "playing" | "finished";
 export type CellType = "corner" | "edge" | "center";
@@ -8,6 +9,15 @@ export interface GameCell {
   dots: number;
   playerId: string | null;
   playerColor: UserColor | null;
+}
+
+// Explosion animation data for each step
+export interface ExplosionStep {
+  fromRow: number;
+  fromCol: number;
+  toRow: number;
+  toCol: number;
+  color: string;
 }
 
 export interface GameState {
@@ -183,8 +193,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     cell.playerId = playerId;
     cell.playerColor = playerColor;
     
-    // Handle chain reactions
+    // Handle chain reactions and collect animation data
     const explosionQueue: Array<{row: number, col: number}> = [];
+    const allExplosionSteps: ExplosionStep[][] = []; // Array of explosion waves
     const limit = getCellLimit(row, col);
     
     if (cell.dots > limit) {
@@ -196,45 +207,85 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let explosionCount = 0;
     
     while (explosionQueue.length > 0 && explosionCount < MAX_EXPLOSIONS) {
-      const {row: explodeRow, col: explodeCol} = explosionQueue.shift()!;
-      explosionCount++;
+      // Process current wave of explosions
+      const currentWaveSize = explosionQueue.length;
+      const currentWaveSteps: ExplosionStep[] = [];
       
-      const explodingCell = newBoard[explodeRow][explodeCol];
-      
-      // Reset exploding cell
-      explodingCell.dots = 0;
-      explodingCell.playerId = null;
-      explodingCell.playerColor = null;
-      
-      // Spread to adjacent cells
-      const directions = [
-        {row: -1, col: 0}, // up
-        {row: 1, col: 0},  // down
-        {row: 0, col: -1}, // left
-        {row: 0, col: 1}   // right
-      ];
-      
-      directions.forEach(({row: dRow, col: dCol}) => {
-        const newRow = explodeRow + dRow;
-        const newCol = explodeCol + dCol;
+      for (let i = 0; i < currentWaveSize && explosionQueue.length > 0; i++) {
+        const {row: explodeRow, col: explodeCol} = explosionQueue.shift()!;
+        explosionCount++;
         
-        if (newRow >= 0 && newRow < get().rows && newCol >= 0 && newCol < get().cols) {
-          const adjacentCell = newBoard[newRow][newCol];
-          adjacentCell.dots += 1;
-          adjacentCell.playerId = playerId;
-          adjacentCell.playerColor = playerColor;
+        const explodingCell = newBoard[explodeRow][explodeCol];
+        const explosionColor = explodingCell.playerColor || playerColor;
+        
+        // Reset exploding cell
+        explodingCell.dots = 0;
+        explodingCell.playerId = null;
+        explodingCell.playerColor = null;
+        
+        // Spread to adjacent cells
+        const directions = [
+          {row: -1, col: 0}, // up
+          {row: 1, col: 0},  // down
+          {row: 0, col: -1}, // left
+          {row: 0, col: 1}   // right
+        ];
+        
+        directions.forEach(({row: dRow, col: dCol}) => {
+          const newRow = explodeRow + dRow;
+          const newCol = explodeCol + dCol;
           
-          const adjacentLimit = getCellLimit(newRow, newCol);
-          if (adjacentCell.dots > adjacentLimit) {
-            explosionQueue.push({row: newRow, col: newCol});
+          if (newRow >= 0 && newRow < get().rows && newCol >= 0 && newCol < get().cols) {
+            const adjacentCell = newBoard[newRow][newCol];
+            adjacentCell.dots += 1;
+            adjacentCell.playerId = playerId;
+            adjacentCell.playerColor = playerColor;
+            
+            // Record this explosion step for animation
+            currentWaveSteps.push({
+              fromRow: explodeRow,
+              fromCol: explodeCol,
+              toRow: newRow,
+              toCol: newCol,
+              color: explosionColor,
+            });
+            
+            const adjacentLimit = getCellLimit(newRow, newCol);
+            if (adjacentCell.dots > adjacentLimit) {
+              explosionQueue.push({row: newRow, col: newCol});
+            }
           }
-        }
-      });
+        });
+      }
+      
+      // Add this wave's explosion steps if any
+      if (currentWaveSteps.length > 0) {
+        allExplosionSteps.push(currentWaveSteps);
+      }
     }
     
     // Log warning if we hit the explosion limit (should be very rare now)
     if (explosionCount >= MAX_EXPLOSIONS) {
       console.warn(`Chain reaction hit maximum explosion limit (${MAX_EXPLOSIONS}). This may indicate an unexpected edge case.`);
+    }
+    
+    // Queue explosion animations wave by wave
+    if (allExplosionSteps.length > 0) {
+      const animationStore = useExplosionAnimationStore.getState();
+      const baseDelay = 0.15; // Delay between waves (seconds)
+      
+      // FIRST: Register ALL explosions immediately for ALL waves
+      // This ensures destination cells don't show atoms until animations complete
+      // AND source cells still show atoms until they start flying
+      const allSteps = allExplosionSteps.flat();
+      animationStore.registerExplosions(allSteps);
+      
+      // THEN: Schedule the actual flying animations with delays
+      allExplosionSteps.forEach((wave, waveIndex) => {
+        setTimeout(() => {
+          animationStore.startFlyingAtoms(wave);
+        }, waveIndex * baseDelay * 1000);
+      });
     }
     
     // Update move history

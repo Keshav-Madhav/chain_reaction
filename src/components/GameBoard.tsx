@@ -1,11 +1,14 @@
 "use client";
 
+import { useRef, useEffect, useState, useCallback } from "react";
 import { Grid3X3 } from "lucide-react";
 import { useGameWithPeers } from "@/hooks/useGameWithPeers";
 import { PeerManager } from "@/PeerJsConnectivity/peerManager";
 import { WinnerModal } from "@/components/WinnerModal";
 import { useUserStore } from "@/stores/userStore";
 import { AnimatedAtom } from "@/components/AnimatedAtom";
+import { FlyingAtom } from "@/components/FlyingAtom";
+import { useExplosionAnimationStore } from "@/stores/explosionAnimationStore";
 
 interface GameBoardProps {
   roomId: string;
@@ -30,6 +33,115 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   } = useGameWithPeers(peerManager);
   
   const participants = useUserStore((state) => state.participants);
+  
+  // Flying atoms animation
+  const flyingAtoms = useExplosionAnimationStore((state) => state.flyingAtoms);
+  const onAtomLanded = useExplosionAnimationStore((state) => state.onAtomLanded);
+  const pendingArrivals = useExplosionAnimationStore((state) => state.pendingArrivals);
+  const pendingDepartures = useExplosionAnimationStore((state) => state.pendingDepartures);
+  const isAnimating = useExplosionAnimationStore((state) => state.isAnimating);
+  
+  // Winner modal state - delay showing until animations complete
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [winnerModalDismissed, setWinnerModalDismissed] = useState(false);
+  const [lastWinner, setLastWinner] = useState<string | null>(null);
+  
+  // Show winner modal after animations complete + delay
+  useEffect(() => {
+    // Reset state when winner changes or game resets
+    if (winner !== lastWinner) {
+      setLastWinner(winner);
+      setShowWinnerModal(false);
+      setWinnerModalDismissed(false);
+    }
+    
+    if (status === "finished" && winner && !isAnimating && !winnerModalDismissed) {
+      // Wait for animations to fully complete, then show modal after a brief moment
+      const timer = setTimeout(() => {
+        setShowWinnerModal(true);
+      }, 1200); // 1.2s delay after animations complete to see the final board
+      return () => clearTimeout(timer);
+    } else if (status !== "finished") {
+      // Reset modal state when a new game starts
+      setShowWinnerModal(false);
+      setWinnerModalDismissed(false);
+    }
+  }, [status, winner, isAnimating, winnerModalDismissed, lastWinner]);
+  
+  const handleDismissWinnerModal = useCallback(() => {
+    setShowWinnerModal(false);
+    setWinnerModalDismissed(true);
+  }, []);
+  
+  const handleShowResults = useCallback(() => {
+    setShowWinnerModal(true);
+    setWinnerModalDismissed(false);
+  }, []);
+  
+  // Calculate visual dots for a cell
+  // - Subtract pending arrivals (atoms still flying TO this cell)
+  // - Add pending departures (atoms still showing here before they fly away)
+  const getVisualDotsInfo = useCallback((row: number, col: number, actualDots: number, actualColor: string | null) => {
+    const key = `${row}-${col}`;
+    const arrivals = pendingArrivals.get(key) || 0;
+    const departures = pendingDepartures.get(key);
+    
+    // Calculate visual dot count
+    let visualDots = actualDots - arrivals;
+    if (departures) {
+      visualDots += departures.count;
+    }
+    
+    // Use departure color if we have pending departures (atoms waiting to explode)
+    const visualColor = departures && departures.count > 0 ? departures.color : actualColor;
+    
+    return {
+      dots: Math.max(0, visualDots),
+      color: visualColor,
+    };
+  }, [pendingArrivals, pendingDepartures]);
+  
+  // Ref to the grid container for position calculations
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [cellPositions, setCellPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  
+  // Calculate cell positions when board changes or on resize
+  const updateCellPositions = useCallback(() => {
+    if (!gridRef.current) return;
+    
+    const gridRect = gridRef.current.getBoundingClientRect();
+    const cells = gridRef.current.querySelectorAll('[data-cell]');
+    const positions = new Map<string, { x: number; y: number }>();
+    
+    cells.forEach((cell) => {
+      const row = cell.getAttribute('data-row');
+      const col = cell.getAttribute('data-col');
+      if (row && col) {
+        const cellRect = cell.getBoundingClientRect();
+        // Calculate center of cell relative to grid
+        positions.set(`${row}-${col}`, {
+          x: cellRect.left - gridRect.left + cellRect.width / 2,
+          y: cellRect.top - gridRect.top + cellRect.height / 2,
+        });
+      }
+    });
+    
+    setCellPositions(positions);
+  }, []);
+  
+  useEffect(() => {
+    updateCellPositions();
+    
+    // Update on resize
+    window.addEventListener('resize', updateCellPositions);
+    return () => window.removeEventListener('resize', updateCellPositions);
+  }, [board, updateCellPositions]);
+  
+  // Update positions after a short delay to ensure DOM is rendered
+  useEffect(() => {
+    const timer = setTimeout(updateCellPositions, 100);
+    return () => clearTimeout(timer);
+  }, [board, updateCellPositions]);
 
   // Helper function to get cell limit based on position
   const getCellLimit = (row: number, col: number) => {
@@ -163,13 +275,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           </div>
 
           <div 
-            className="grid gap-1 sm:gap-2 w-fit mx-auto touch-manipulation"
+            ref={gridRef}
+            className="grid gap-1 sm:gap-2 w-fit mx-auto touch-manipulation relative"
             style={{ gridTemplateColumns: `repeat(${board[0]?.length || 8}, 1fr)` }}
           >
             {board.map((row, rowIndex) =>
               row.map((cell, colIndex) => (
                 <button
                   key={`${rowIndex}-${colIndex}`}
+                  data-cell
+                  data-row={rowIndex}
+                  data-col={colIndex}
                   onClick={() => handleCellClick(rowIndex, colIndex)}
                   className={`
                     w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-md lg:rounded-lg border-2 transition-all duration-200 flex items-center justify-center
@@ -186,10 +302,38 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     touchAction: 'manipulation'
                   }}
                 >
-                  {renderAtoms(cell.dots, cell.playerColor, rowIndex, colIndex)}
+                  {(() => {
+                    const visual = getVisualDotsInfo(rowIndex, colIndex, cell.dots, cell.playerColor);
+                    return renderAtoms(visual.dots, visual.color, rowIndex, colIndex);
+                  })()}
                 </button>
               ))
             )}
+            
+            {/* Flying atoms layer - rendered on top of the grid */}
+            {flyingAtoms.map((atom) => {
+              const fromPos = cellPositions.get(`${atom.fromRow}-${atom.fromCol}`);
+              const toPos = cellPositions.get(`${atom.toRow}-${atom.toCol}`);
+              
+              if (!fromPos || !toPos) return null;
+              
+              // Offset to center the flying atom
+              const atomOffset = 14; // Half of atom size (w-7 = 28px / 2)
+              
+              return (
+                <FlyingAtom
+                  key={atom.id}
+                  color={atom.color}
+                  startX={fromPos.x - atomOffset}
+                  startY={fromPos.y - atomOffset}
+                  endX={toPos.x - atomOffset}
+                  endY={toPos.y - atomOffset}
+                  duration={0.25}
+                  delay={atom.delay}
+                  onComplete={() => onAtomLanded(atom.id, atom.toRow, atom.toCol)}
+                />
+              );
+            })}
           </div>
           
           {/* Game Info */}
@@ -254,18 +398,30 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         </div>
       </div>
       
-      {/* Winner Modal */}
-      {status === "finished" && winner && (() => {
+      {/* Winner Modal - only show after animations complete */}
+      {showWinnerModal && winner && (() => {
         const winnerInfo = getWinnerInfo();
         return winnerInfo ? (
           <WinnerModal
             winnerName={winnerInfo.name}
             winnerColor={winnerInfo.color}
             onNewGame={handleNewGame}
+            onDismiss={handleDismissWinnerModal}
             isHost={isHost}
           />
         ) : null;
       })()}
+      
+      {/* Show Results button when modal is dismissed */}
+      {status === "finished" && winner && winnerModalDismissed && !showWinnerModal && (
+        <button
+          onClick={handleShowResults}
+          className="fixed bottom-6 right-6 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-3 px-5 rounded-full shadow-lg transition-all duration-200 flex items-center gap-2 z-40 hover:scale-105"
+        >
+          <span className="text-lg">🏆</span>
+          Show Results
+        </button>
+      )}
     </div>
   );
 };
