@@ -10,6 +10,7 @@ interface JoinCreateRoomProps {
   loading: boolean;
   error: string | null;
   connectionStatus?: string | null;
+  initialRoomId?: string;
 }
 
 export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
@@ -18,8 +19,9 @@ export const JoinCreateRoom: React.FC<JoinCreateRoomProps> = ({
   loading,
   error,
   connectionStatus,
+  initialRoomId,
 }) => {
-  const [inputRoomId, setInputRoomId] = useState("");
+  const [inputRoomId, setInputRoomId] = useState(initialRoomId ?? "");
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
 
   // Helper function to safely convert error to string

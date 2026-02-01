@@ -27,11 +27,13 @@ export type RoomMessage = {
  */
 type ControlMessage =
   | { __control: "join"; peerId: PeerId; userData?: UserData }
+  | { __control: "rejoin"; peerId: PeerId; originalPeerId: PeerId; userData: UserData }
   | { __control: "reject"; reason: string }
   | { __control: "peer-list"; peers: PeerId[]; usersData?: UserData[] }
   | { __control: "new-peer"; peerId: PeerId; userData?: UserData }
   | { __control: "user-update"; userData: UserData }
   | { __control: "peer-left"; peerId: PeerId }
+  | { __control: "rejoin-success"; originalPeerId: PeerId; newPeerId: PeerId; gameState?: GameState }
   | { __control: "game-start"; firstPlayerId: string }
   | { __control: "game-move"; row: number; col: number; playerId: string; playerColor: string }
   | { __control: "game-state-sync"; gameState: GameState }
@@ -114,6 +116,7 @@ export class PeerManager {
   onNextTurn?: (playerId: string) => void;
   onChatMessage?: (message: { id: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }) => void;
   onUserTyping?: (userId: string, userName: string, isTyping: boolean) => void;
+  onRejoinSuccess?: (originalPeerId: string, newPeerId: string, gameState?: GameState) => void;
   connectionTimeout: number; // Connection timeout in milliseconds
 
   constructor(options: {
@@ -130,6 +133,7 @@ export class PeerManager {
     onNextTurn?: (playerId: string) => void;
     onChatMessage?: (message: { id: string; senderId: string; senderName: string; senderColor: string; content: string; timestamp: number }) => void;
     onUserTyping?: (userId: string, userName: string, isTyping: boolean) => void;
+    onRejoinSuccess?: (originalPeerId: string, newPeerId: string, gameState?: GameState) => void;
     connectionTimeout?: number; // Timeout in milliseconds
   }) {
     this.onPeerListUpdate = options.onPeerListUpdate;
@@ -145,6 +149,7 @@ export class PeerManager {
     this.onNextTurn = options.onNextTurn;
     this.onChatMessage = options.onChatMessage;
     this.onUserTyping = options.onUserTyping;
+    this.onRejoinSuccess = options.onRejoinSuccess;
     this.connectionTimeout = options.connectionTimeout ?? 30000; // Default 30 seconds
   }
 
@@ -204,6 +209,137 @@ export class PeerManager {
                 }
                 
                 this.onPeerListUpdate([...(existing ?? []), hostId, newPeer]);
+              }
+              break;
+            }
+            case "rejoin": {
+              // Handle a player rejoining with their original identity
+              if (this.isHost && this.peer) {
+                const newPeerId = parsed.peerId;
+                const originalPeerId = parsed.originalPeerId;
+                const userData = parsed.userData;
+                
+                // Update user data with new peer ID but keep original identity info
+                const updatedUserData: UserData = {
+                  ...userData,
+                  id: newPeerId, // Use new peer ID
+                };
+                
+                this.usersData.set(newPeerId, updatedUserData);
+                
+                const existing = Array.from(this.connections.keys()).filter((p) => p !== newPeerId);
+                const hostId = this.peer.id;
+                
+                // Get all existing user data
+                const existingUsersData = Array.from(this.usersData.values());
+                
+                // Get current game state to sync with rejoining player
+                let currentGameState: GameState | undefined;
+                try {
+                  const { useGameStore } = require("@/stores/gameStore");
+                  const gameStore = useGameStore.getState();
+                  currentGameState = gameStore.getGameState();
+                  
+                  // Remap player IDs in the game state for the rejoining player
+                  if (currentGameState) {
+                    // Remap currentTurn if it was the rejoining player
+                    if (currentGameState.currentTurn === originalPeerId) {
+                      currentGameState = {
+                        ...currentGameState,
+                        currentTurn: newPeerId,
+                      };
+                    }
+                    
+                    // Remap firstPlayer if it was the rejoining player
+                    if (currentGameState.firstPlayer === originalPeerId) {
+                      currentGameState = {
+                        ...currentGameState,
+                        firstPlayer: newPeerId,
+                      };
+                    }
+                    
+                    // Remap board cells that belong to the rejoining player
+                    if (currentGameState.board) {
+                      currentGameState = {
+                        ...currentGameState,
+                        board: currentGameState.board.map(row =>
+                          row.map(cell => ({
+                            ...cell,
+                            playerId: cell.playerId === originalPeerId ? newPeerId : cell.playerId,
+                          }))
+                        ),
+                      };
+                    }
+                    
+                    // Remap move history
+                    if (currentGameState.moveHistory) {
+                      currentGameState = {
+                        ...currentGameState,
+                        moveHistory: currentGameState.moveHistory.map(move => ({
+                          ...move,
+                          playerId: move.playerId === originalPeerId ? newPeerId : move.playerId,
+                        })),
+                      };
+                    }
+                    
+                    // Update the host's game state with remapped IDs
+                    gameStore.updateGameState(currentGameState);
+                    
+                    // Broadcast the updated game state to all other peers
+                    const packet = JSON.stringify({ __control: "game-state-sync", gameState: currentGameState });
+                    for (const [pid, c] of this.connections.entries()) {
+                      if (pid === newPeerId) continue;
+                      if (c.open) {
+                        try {
+                          c.send(packet);
+                        } catch (e) {
+                          console.warn("failed to send game state sync", pid, e);
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.warn("Could not get/update game state for rejoin:", e);
+                }
+                
+                // Send rejoin success with game state and peer list
+                conn.send(JSON.stringify({ 
+                  __control: "rejoin-success",
+                  originalPeerId,
+                  newPeerId,
+                  gameState: currentGameState
+                }));
+                
+                // Also send peer list
+                conn.send(JSON.stringify({ 
+                  __control: "peer-list", 
+                  peers: [hostId, ...existing],
+                  usersData: existingUsersData
+                }));
+
+                // Notify existing peers about the rejoined player
+                for (const [pid, c] of this.connections.entries()) {
+                  if (pid === newPeerId) continue;
+                  try {
+                    c.send(JSON.stringify({ __control: "new-peer", peerId: newPeerId, userData: updatedUserData }));
+                  } catch (e) {
+                    console.warn("failed to notify existing peer about rejoin", pid, e);
+                  }
+                }
+                
+                // Notify about user data update
+                if (this.onUserDataUpdate) {
+                  this.onUserDataUpdate(updatedUserData);
+                }
+                
+                this.onPeerListUpdate([...(existing ?? []), hostId, newPeerId]);
+              }
+              break;
+            }
+            case "rejoin-success": {
+              // Client received confirmation of successful rejoin
+              if (this.onRejoinSuccess) {
+                this.onRejoinSuccess(parsed.originalPeerId, parsed.newPeerId, parsed.gameState);
               }
               break;
             }
@@ -617,6 +753,76 @@ export class PeerManager {
 
     try {
       await withTimeout(connectionPromise, this.connectionTimeout, `join room ${roomId} with user data`);
+    } catch (error) {
+      // Clean up on timeout or error
+      if (this.peer) {
+        try {
+          this.peer.destroy();
+        } catch (e) {
+          console.warn("Error destroying peer after timeout:", e);
+        }
+        this.peer = null;
+      }
+      throw error;
+    }
+  }
+
+  // Rejoin a room with previous session data
+  async rejoinRoom(roomId: string, originalPeerId: string, userData: UserData, peerOptions?: PeerJSOption): Promise<void> {
+    if (typeof window === "undefined") throw new Error("rejoinRoom must run on client-side");
+    if (this.peer) this.destroy();
+    this.isHost = false;
+    this.roomId = roomId;
+
+    // Create a new peer (we can't reuse the old peer ID as it might be taken or invalid)
+    this.peer = peerOptions ? new Peer(peerOptions) : new Peer();
+
+    const connectionPromise = new Promise<void>((resolve, reject) => {
+      if (!this.peer) return reject(new Error("Peer not initialized"));
+      this.peer.on("open", (newPeerId) => {
+        const conn = this.peer!.connect(roomId, { reliable: true });
+        
+        // Set a shorter timeout specifically for room connection
+        const roomConnectionTimeout = setTimeout(() => {
+          conn.close();
+          reject(new Error(`Unable to rejoin room "${roomId}". The room may no longer exist or the host may be offline.`));
+        }, 10000); // 10 second timeout for room connection
+        
+        conn.on("open", () => {
+          clearTimeout(roomConnectionTimeout);
+          // Send rejoin message with original peer ID and user data
+          conn.send(JSON.stringify({ 
+            __control: "rejoin", 
+            peerId: newPeerId, 
+            originalPeerId,
+            userData: {
+              ...userData,
+              id: newPeerId // Update user data with new peer ID
+            }
+          }));
+          this.setupConnectionHandlers(conn);
+          resolve();
+        });
+        conn.on("error", (e) => {
+          clearTimeout(roomConnectionTimeout);
+          this.onError(e);
+          reject(e);
+        });
+      });
+
+      this.peer.on("connection", (conn) => {
+        conn.on("open", () => this.setupConnectionHandlers(conn));
+        conn.on("error", (e) => this.onError(e));
+      });
+
+      this.peer.on("error", (e) => {
+        this.onError(e);
+        reject(e);
+      });
+    });
+
+    try {
+      await withTimeout(connectionPromise, this.connectionTimeout, `rejoin room ${roomId}`);
     } catch (error) {
       // Clean up on timeout or error
       if (this.peer) {

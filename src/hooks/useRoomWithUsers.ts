@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { PeerManager, createRoomId } from "@/PeerJsConnectivity/peerManager";
 import { useUserStore, UserData } from "@/stores/userStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useGameStore, GameState } from "@/stores/gameStore";
 
 export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const managerRef = useRef<PeerManager | null>(null);
@@ -13,19 +14,17 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
   const [localPeerId, setLocalPeerId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
+  const [isRejoin, setIsRejoin] = useState<boolean>(false);
 
-  const { addParticipant, removeParticipant, clearAllData } = useUserStore();
+  const { addParticipant, removeParticipant, clearAllData, setLocalUser } = useUserStore();
   const { addMessage, setUserTyping, removeUserTyping, addSystemMessage } = useChatStore();
+  const { updateGameState } = useGameStore();
 
   useEffect(() => {
-    // Handle browser close/refresh events
-    const handleBeforeUnload = () => {
-      const mgr = managerRef.current;
-      if (mgr) {
-        mgr.leaveRoom();
-      }
-    };
-
+    // NOTE: We intentionally do NOT leave room on beforeunload/refresh
+    // This allows users to rejoin with their saved session after a refresh
+    // The host will clean up disconnected peers after a timeout
+    
     const handleVisibilityChange = () => {
       if (document.hidden) {
         // Page is being hidden (tab switch, minimize, etc.)
@@ -33,13 +32,13 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
       }
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       
+      // Only leave room when component is truly unmounting (not on refresh)
+      // This happens when navigating away in a SPA
       managerRef.current?.leaveRoom();
       managerRef.current = null;
     };
@@ -107,10 +106,22 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
             removeUserTyping(userId);
           }
         },
+        onRejoinSuccess: (originalPeerId: string, newPeerId: string, gameState?: GameState) => {
+          // Handle successful rejoin
+          console.log("Rejoin successful:", { originalPeerId, newPeerId, gameState });
+          
+          // Sync game state if provided
+          if (gameState) {
+            updateGameState(gameState);
+            addSystemMessage("Welcome back! Game state has been restored.");
+          } else {
+            addSystemMessage("Welcome back to Chain Reaction!");
+          }
+        },
       });
     }
     return managerRef.current;
-  }, [opts?.maxParticipants, addParticipant, removeParticipant, addMessage, setUserTyping, removeUserTyping, addSystemMessage]);
+  }, [opts?.maxParticipants, addParticipant, removeParticipant, addMessage, setUserTyping, removeUserTyping, addSystemMessage, updateGameState]);
 
   const createRoom = useCallback(async (customRoomId?: string): Promise<string> => {
     if (typeof window === "undefined") {
@@ -254,19 +265,85 @@ export const useRoomWithUsers = (opts?: { maxParticipants?: number }) => {
     setLocalPeerId(null);
     setIsHost(false);
     setConnectionStatus(null);
+    setIsRejoin(false);
     clearAllData();
   }, [clearAllData]);
+
+  // Rejoin a room with saved session data
+  const rejoinRoom = useCallback(async (
+    roomIdToJoin: string, 
+    originalPeerId: string, 
+    userData: UserData
+  ): Promise<void> => {
+    if (typeof window === "undefined") {
+      throw new Error("rejoinRoom must be called client-side");
+    }
+    setLoading(true);
+    setError(null);
+    setConnectionStatus("Reconnecting to room...");
+    const mgr = ensureManager();
+    
+    // Retry logic with exponential backoff
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        setConnectionStatus(
+          attempt > 0 
+            ? `Retrying reconnection (${attempt + 1}/${maxRetries})...` 
+            : `Rejoining room "${roomIdToJoin}"...`
+        );
+        await mgr.rejoinRoom(roomIdToJoin, originalPeerId, userData);
+        setRoomId(roomIdToJoin);
+        setIsHost(false);
+        setLocalPeerId(mgr.peer?.id ?? null);
+        setIsRejoin(true);
+        
+        // Update local user with new peer ID
+        const updatedUserData = {
+          ...userData,
+          id: mgr.peer?.id ?? userData.id,
+        };
+        setLocalUser(updatedUserData);
+        
+        setLoading(false);
+        setConnectionStatus(null);
+        return;
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        
+        // Don't retry on certain types of errors
+        if (lastError.message.includes('no longer exist') || 
+            attempt === maxRetries - 1) {
+          break;
+        }
+        
+        setConnectionStatus(`Reconnection failed, retrying in ${Math.pow(2, attempt)} seconds...`);
+        // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    setError(lastError);
+    setLoading(false);
+    setConnectionStatus(null);
+    throw lastError;
+  }, [ensureManager, setLocalUser]);
 
   return {
     createRoom,
     joinRoom,
     joinRoomWithUserData,
+    rejoinRoom,
     leaveRoom,
     broadcastUserData,
     setUserData,
     roomId,
     localPeerId,
     isHost,
+    isRejoin,
     loading,
     error,
     connectionStatus,
